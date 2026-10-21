@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>香港體適能：一分鐘仰臥起坐挑戰</title>
+    <!-- MediaPipe 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <!-- Supabase JS 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
+        body {
+            margin: 0;
+            padding: 10px;
+            background-color: #fce4ec;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #app-container {
+            width: 100%;
+            max-width: 1050px;
+            background-color: white;
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        @media (min-width: 768px) {
+            #app-container {
+                flex-direction: row;
+                height: 88vh;
+            }
+            #video-container { width: 65%; height: 100%; }
+            #ui-container { width: 35%; height: 100%; }
+        }
+
+        #video-container {
+            position: relative;
+            background-color: #111;
+            width: 100%;
+            height: 48vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .input_video { display: none; }
+        .output_canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transform: scaleX(-1);
+        }
+
+        #body-status-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: white;
+            background-color: #f44336;
+            z-index: 10;
+        }
+
+        #ui-container {
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            background-color: #fff;
+            overflow-y: auto;
+        }
+
+        h1 { color: #ec407a; text-align: center; font-size: 1.4rem; margin: 0 0 5px 0; }
+        .subtitle { font-size: 0.75rem; color: #666; text-align: center; margin-bottom: 8px; }
+        
+        .input-group { margin-bottom: 6px; }
+        .input-group label { font-size: 0.8rem; color: #555; display: block; margin-bottom: 2px; }
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 6px;
+            font-size: 0.9rem;
+            border-radius: 8px;
+            border: 1.5px solid #ddd;
+        }
+
+        #score-board {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background-color: #f1f8e9;
+            padding: 8px;
+            border-radius: 12px;
+            margin: 4px 0;
+        }
+
+        #timer { font-size: 1.6rem; color: #ff9800; font-weight: bold; }
+        #situp-count { font-size: 3rem; color: #4caf50; font-weight: bold; }
+
+        #feedback {
+            background-color: #fff9c4;
+            padding: 8px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 0.85rem;
+            border: 1.5px solid #fff176;
+            min-height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tips-box {
+            font-size: 0.75rem;
+            color: #455a64;
+            background-color: #e3f2fd;
+            padding: 6px;
+            border-radius: 6px;
+            margin: 4px 0;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            background-color: #4caf50;
+            margin-top: 4px;
+        }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        button:hover:not(:disabled) { opacity: 0.9; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div id="video-container">
+        <div id="body-status-badge">❌ 請調整手機，全身側面入鏡</div>
+        <video class="input_video" playsinline></video>
+        <canvas class="output_canvas"></canvas>
+    </div>
+
+    <div id="ui-container">
+        <div>
+            <h1>一分鐘仰臥起坐</h1>
+            <div class="subtitle">依據香港教育局體適能要求設計</div>
+        </div>
+
+        <div class="input-group">
+            <label>學生學號：</label>
+            <input type="text" id="student-id" placeholder="例如: S12345">
+        </div>
+
+        <div class="tips-box">
+            💡 <b>居家提示：</b>請將雙腳屈膝固定（可攝在梳化底），雙手交叉放胸前，側面面向鏡頭。
+        </div>
+
+        <div id="score-board">
+            <div>
+                <div style="font-size:0.75rem; color:#666;">剩餘時間</div>
+                <div id="timer">60s</div>
+            </div>
+            <div>
+                <div style="font-size:0.75rem; color:#666;">有效次數</div>
+                <div id="situp-count">0</div>
+            </div>
+        </div>
+
+        <div id="feedback">請退後讓鏡頭拍到全身，然後輸入學號。</div>
+
+        <button id="start-btn" disabled>請先對準全身側鏡頭</button>
+        <button id="stop-btn" style="background-color: #f44336; display: none;">結束並上傳成績</button>
+    </div>
+</div>
+
+<script>
+    // --- 填入你的 Supabase 資料 ---
+    const SUPABASE_URL = 'https://你的專案ID.supabase.co'; 
+    const SUPABASE_ANON_KEY = '你的API_KEY'; 
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const canvasCtx = canvasElement.getContext('2d');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const countDisplay = document.getElementById('situp-count');
+    const timerDisplay = document.getElementById('timer');
+    const feedbackDisplay = document.getElementById('feedback');
+    const studentIdInput = document.getElementById('student-id');
+    const bodyStatusBadge = document.getElementById('body-status-badge');
+
+    let situpCounter = 0;
+    let stage = 'down'; // 'down' 代表躺下, 'up' 代表坐起
+    let isRunning = false;
+    let isFullBodyVisible = false;
+    let timeLeft = 60;
+    let countdownInterval;
+
+    const synth = window.speechSynthesis;
+    const speak = (text) => {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'zh-HK';
+        synth.cancel();
+        synth.speak(utter);
+    };
+
+    function calculateAngle(a, b, c) {
+        const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+        let angle = Math.abs(radians * 180.0 / Math.PI);
+        if (angle > 180.0) angle = 360 - angle;
+        return angle;
+    }
+
+    // 檢查全身（頭、肩膀、臀、膝、腳踝）是否在鏡頭內
+    function checkFullBody(landmarks) {
+        const keyPoints = [0, 11, 12, 23, 24, 25, 26, 27, 28]; 
+        return keyPoints.every(idx => landmarks[idx] && landmarks[idx].visibility > 0.6);
+    }
+
+    function onResults(results) {
+        canvasElement.width = videoElement.videoWidth || 640;
+        canvasElement.height = videoElement.videoHeight || 480;
+
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        
+        canvasCtx.scale(-1, 1);
+        canvasCtx.translate(-canvasElement.width, 0);
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.poseLandmarks) {
+            drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
+            drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', lineWidth: 1, radius: 4});
+
+            isFullBodyVisible = checkFullBody(results.poseLandmarks);
+
+            if (!isRunning) {
+                if (isFullBodyVisible) {
+                    bodyStatusBadge.style.backgroundColor = '#4caf50';
+                    bodyStatusBadge.innerText = '✅ 全身就位，可以開始！';
+                    startBtn.disabled = false;
+                    startBtn.innerText = '開始挑戰！';
+                    if (feedbackDisplay.innerText.includes('全身')) {
+                        feedbackDisplay.innerText = '姿勢正確，請輸入學號並點擊開始。';
+                    }
+                } else {
+                    bodyStatusBadge.style.backgroundColor = '#f44336';
+                    bodyStatusBadge.innerText = '❌ 請調整位置，全身需入鏡';
+                    startBtn.disabled = true;
+                    startBtn.innerText = '請先對準全身側鏡頭';
+                }
+                canvasCtx.restore();
+                return;
+            }
+
+            // --- 核心評估邏輯（對應圖中要點） ---
+            const landmarks = results.poseLandmarks;
+            const side = landmarks[12].visibility > landmarks[11].visibility ? 'right' : 'left';
+            const shoulder = side === 'right' ? landmarks[12] : landmarks[11];
+            const hip = side === 'right' ? landmarks[24] : landmarks[23];
+            const knee = side === 'right' ? landmarks[26] : landmarks[25];
+            const ankle = side === 'right' ? landmarks[28] : landmarks[27];
+
+            // 計算軀幹與大腿夾角
+            const hipAngle = calculateAngle(shoulder, hip, knee);
+            // 計算膝蓋曲度（確保有曲膝）
+            const kneeAngle = calculateAngle(hip, knee, ankle);
+
+            // 圖中要點：曲膝、雙手交胸前、起坐時手肘觸大腿（軀幹向前捲曲）
+            if (stage === 'down' && hipAngle < 75) {
+                // 檢查是否有確實曲膝（大腿與小腿應大約成 90-110 度左右，不能把腳伸直）
+                if (kneeAngle > 140) {
+                    feedbackDisplay.innerText = "⚠️ 記得要曲膝，雙腳踩在地上哦！";
+                } else {
+                    stage = 'up';
+                    situpCounter++;
+                    countDisplay.innerText = situpCounter;
+                    speak(situpCounter.toString());
+                    feedbackDisplay.innerText = "👍 太棒了！手肘有觸及大腿！";
+                }
+            } else if (stage === 'up' && hipAngle > 135) {
+                stage = 'down';
+                feedbackDisplay.innerText = "⬇️ 背部向下躺，注意安全！";
+            }
+        }
+        canvasCtx.restore();
+    }
+
+    const pose = new Pose({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
+    pose.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+        onFrame: async () => { await pose.send({image: videoElement}); },
+        width: 640, height: 480
+    });
+    camera.start();
+
+    startBtn.addEventListener('click', () => {
+        const studentId = studentIdInput.value.trim();
+        if (!studentId) {
+            alert('請先輸入學號才可以開始挑戰！');
+            return;
+        }
+
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+        studentIdInput.disabled = true;
+        
+        situpCounter = 0;
+        countDisplay.innerText = '0';
+        timeLeft = 60;
+        timerDisplay.innerText = '60s';
+        isRunning = true;
+        
+        speak("挑戰開始！加油！");
+        feedbackDisplay.innerText = "挑戰開始！保持標準動作！";
+
+        countdownInterval = setInterval(() => {
+            timeLeft--;
+            timerDisplay.innerText = `${timeLeft}s`;
+
+            if (timeLeft === 10) {
+                speak("最後十秒，加油！堅持住！");
+                feedbackDisplay.innerText = "🔥 最後 10 秒衝刺！";
+            } else if (timeLeft <= 3 && timeLeft > 0) {
+                speak(timeLeft.toString());
+            }
+
+            if (timeLeft <= 0) {
+                endChallenge();
+            }
+        }, 1000);
+    });
+
+    stopBtn.addEventListener('click', endChallenge);
+
+    async function endChallenge() {
+        clearInterval(countdownInterval);
+        isRunning = false;
+        
+        const studentId = studentIdInput.value.trim();
+        feedbackDisplay.innerText = `正在上傳成績至雲端...`;
+
+        let praise = "";
+        if (situpCounter >= 25) praise = "太厲害了！你簡直是體適能小達人！";
+        else if (situpCounter >= 15) praise = "做得很好！持續保持運動習慣！";
+        else praise = "完成挑戰！多加練習一定會更好！";
+
+        speak(`時間到！總共做了 ${situpCounter} 下。${praise}`);
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('fitness_records')
+                .insert([{ student_id: studentId, situp_score: parseInt(situpCounter, 10) }]);
+
+            if (error) {
+                console.error(error);
+                feedbackDisplay.innerText = `上傳失敗：${error.message}`;
+            } else {
+                feedbackDisplay.innerText = `🎉 成績已成功上傳！完成 ${situpCounter} 下。`;
+            }
+        } catch (err) {
+            console.error(err);
+            feedbackDisplay.innerText = `網絡連線錯誤！`;
+        }
+
+        startBtn.style.display = 'block';
+        startBtn.innerText = '再次挑戰';
+        stopBtn.style.display = 'none';
+        studentIdInput.disabled = false;
+    }
+</script>
+
+</body>
+</html>
