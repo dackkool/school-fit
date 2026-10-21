@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>小學生體適能 AI 雲端挑戰</title>
+    <!-- MediaPipe 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <!-- Supabase JS 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
+        body {
+            margin: 0;
+            padding: 10px;
+            background-color: #fce4ec;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #app-container {
+            width: 100%;
+            max-width: 1000px;
+            background-color: white;
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column; /* 預設手機上下分欄 */
+            overflow: hidden;
+        }
+
+        /* 電腦及橫向平版：左右分欄 */
+        @media (min-width: 768px) {
+            #app-container {
+                flex-direction: row;
+                height: 85vh;
+            }
+            #video-container { width: 65%; height: 100%; }
+            #ui-container { width: 35%; height: 100%; }
+        }
+
+        /* 視像區 */
+        #video-container {
+            position: relative;
+            background-color: #111;
+            width: 100%;
+            height: 50vh; /* 手機上佔據半個螢幕高度 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .input_video { display: none; }
+        .output_canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* 確保全身拍攝不變形且完整呈現 */
+            transform: scaleX(-1); /* 鏡像畫面 */
+        }
+
+        /* 狀態指示燈 Overlay */
+        #body-status-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: white;
+            background-color: #f44336; /* 預設紅色未到位 */
+            z-index: 10;
+        }
+
+        /* 資訊介面區 */
+        #ui-container {
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            background-color: #fff;
+        }
+
+        h1 { color: #ec407a; text-align: center; font-size: 1.5rem; margin: 0 0 10px 0; }
+        
+        .input-group { margin-bottom: 8px; }
+        .input-group label { font-size: 0.85rem; color: #555; display: block; margin-bottom: 2px; }
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 8px;
+            font-size: 0.95rem;
+            border-radius: 8px;
+            border: 1.5px solid #ddd;
+        }
+
+        #score-board {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background-color: #f1f8e9;
+            padding: 10px;
+            border-radius: 12px;
+            margin: 5px 0;
+        }
+
+        #timer { font-size: 1.8rem; color: #ff9800; font-weight: bold; }
+        #situp-count { font-size: 3.5rem; color: #4caf50; font-weight: bold; }
+
+        #feedback {
+            background-color: #fff9c4;
+            padding: 8px 12px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 0.95rem;
+            border: 1.5px solid #fff176;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            background-color: #4caf50;
+            margin-top: 5px;
+        }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        button:hover:not(:disabled) { opacity: 0.9; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div id="video-container">
+        <div id="body-status-badge">❌ 請退後，未偵測到全身</div>
+        <video class="input_video" playsinline></video>
+        <canvas class="output_canvas"></canvas>
+    </div>
+
+    <div id="ui-container">
+        <h1>AI 體適能挑戰</h1>
+
+        <div class="input-group">
+            <label>學生學號：</label>
+            <input type="text" id="student-id" placeholder="例如: S12345">
+        </div>
+
+        <div class="input-group">
+            <label>運動項目：</label>
+            <select id="exercise-type">
+                <option value="situp">1 分鐘仰臥起坐</option>
+            </select>
+        </div>
+
+        <div id="score-board">
+            <div>
+                <div style="font-size:0.8rem; color:#666;">剩餘時間</div>
+                <div id="timer">60s</div>
+            </div>
+            <div>
+                <div style="font-size:0.8rem; color:#666;">完成次數</div>
+                <div id="situp-count">0</div>
+            </div>
+        </div>
+
+        <div id="feedback">請退後，全身進入鏡頭後即可開始。</div>
+
+        <button id="start-btn" disabled>請先對準全身鏡頭</button>
+        <button id="stop-btn" style="background-color: #f44336; display: none;">結束並上傳成績</button>
+    </div>
+</div>
+
+<script>
+    // --- 1. 請填入你自己的 Supabase 資料 ---
+    const SUPABASE_URL = 'https://xxxxxxxx.supabase.co'; 
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1...'; 
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const canvasCtx = canvasElement.getContext('2d');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const countDisplay = document.getElementById('situp-count');
+    const timerDisplay = document.getElementById('timer');
+    const feedbackDisplay = document.getElementById('feedback');
+    const studentIdInput = document.getElementById('student-id');
+    const bodyStatusBadge = document.getElementById('body-status-badge');
+
+    let situpCounter = 0;
+    let stage = 'down';
+    let isRunning = false;
+    let isFullBodyVisible = false;
+    let timeLeft = 60;
+    let countdownInterval;
+
+    const synth = window.speechSynthesis;
+    const speak = (text) => {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'zh-HK'; // 優先廣東話
+        synth.cancel();
+        synth.speak(utter);
+    };
+
+    function calculateAngle(a, b, c) {
+        const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+        let angle = Math.abs(radians * 180.0 / Math.PI);
+        if (angle > 180.0) angle = 360 - angle;
+        return angle;
+    }
+
+    // 檢查是否全身都在鏡頭內 (頭、手肘、膝蓋、腳踝)
+    function checkFullBody(landmarks) {
+        const keyPoints = [0, 13, 14, 25, 26, 27, 28]; // 鼻尖、雙肘、雙膝、雙腳踝
+        return keyPoints.every(idx => landmarks[idx] && landmarks[idx].visibility > 0.6);
+    }
+
+    function onResults(results) {
+        canvasElement.width = videoElement.videoWidth || 640;
+        canvasElement.height = videoElement.videoHeight || 480;
+
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        
+        // 畫鏡像攝影機畫面
+        canvasCtx.scale(-1, 1);
+        canvasCtx.translate(-canvasElement.width, 0);
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.poseLandmarks) {
+            // 繪製骨骼線 (繪製鮮綠色骨架與紅色關節點)
+            drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
+            drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', lineWidth: 1, radius: 4});
+
+            // 檢查全身是否到位
+            isFullBodyVisible = checkFullBody(results.poseLandmarks);
+
+            if (!isRunning) {
+                if (isFullBodyVisible) {
+                    bodyStatusBadge.style.backgroundColor = '#4caf50';
+                    bodyStatusBadge.innerText = '✅ 姿勢到位，可以開始！';
+                    startBtn.disabled = false;
+                    startBtn.innerText = '開始挑戰！';
+                    if (feedbackDisplay.innerText.includes('退後')) {
+                        feedbackDisplay.innerText = '全身已就位，請輸入學號並點擊開始。';
+                    }
+                } else {
+                    bodyStatusBadge.style.backgroundColor = '#f44336';
+                    bodyStatusBadge.innerText = '❌ 請退後，確保全身入鏡';
+                    startBtn.disabled = true;
+                    startBtn.innerText = '請先對準全身鏡頭';
+                }
+                canvasCtx.restore();
+                return;
+            }
+
+            // 動作偵測邏輯
+            const landmarks = results.poseLandmarks;
+            const side = landmarks[12].visibility > landmarks[11].visibility ? 'right' : 'left';
+            const shoulder = side === 'right' ? landmarks[12] : landmarks[11];
+            const hip = side === 'right' ? landmarks[24] : landmarks[23];
+            const knee = side === 'right' ? landmarks[26] : landmarks[25];
+
+            const hipAngle = calculateAngle(shoulder, hip, knee);
+
+            if (stage === 'down' && hipAngle < 70) {
+                stage = 'up';
+                situpCounter++;
+                countDisplay.innerText = situpCounter;
+                speak(situpCounter.toString());
+                feedbackDisplay.innerText = "做得好！動作好標準！";
+            } else if (stage === 'up' && hipAngle > 140) {
+                stage = 'down';
+            }
+        }
+        canvasCtx.restore();
+    }
+
+    const pose = new Pose({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
+    pose.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+        onFrame: async () => { await pose.send({image: videoElement}); },
+        width: 640, height: 480
+    });
+    camera.start();
+
+    startBtn.addEventListener('click', () => {
+        const studentId = studentIdInput.value.trim();
+        if (!studentId) {
+            alert('請先輸入學號才可以開始挑戰！');
+            return;
+        }
+
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+        studentIdInput.disabled = true;
+        
+        situpCounter = 0;
+        countDisplay.innerText = '0';
+        timeLeft = 60;
+        timerDisplay.innerText = '60s';
+        isRunning = true;
+        
+        speak("挑戰開始！加油！");
+        feedbackDisplay.innerText = "加油！保持節奏！";
+
+        countdownInterval = setInterval(() => {
+            timeLeft--;
+            timerDisplay.innerText = `${timeLeft}s`;
+
+            // 熱血語音鼓勵機制
+            if (timeLeft === 10) {
+                speak("最後十秒，加油！堅持住！");
+                feedbackDisplay.innerText = "🔥 最後 10 秒衝刺！";
+            } else if (timeLeft <= 3 && timeLeft > 0) {
+                speak(timeLeft.toString());
+            }
+
+            if (timeLeft <= 0) {
+                endChallenge();
+            }
+        }, 1000);
+    });
+
+    stopBtn.addEventListener('click', endChallenge);
+
+    async function endChallenge() {
+        clearInterval(countdownInterval);
+        isRunning = false;
+        
+        const studentId = studentIdInput.value.trim();
+        feedbackDisplay.innerText = `正在上傳成績至雲端...`;
+
+        // 完結語音讚賞
+        let praise = "";
+        if (situpCounter >= 25) praise = "太厲害了！你簡直是體適能小達人！";
+        else if (situpCounter >= 15) praise = "做得好！你的進步很大！";
+        else praise = "完成挑戰！繼續努力，下次一定更棒！";
+
+        speak(`時間到！總共做了 ${situpCounter} 下。${praise}`);
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('fitness_records')
+                .insert([{ student_id: studentId, situp_score: parseInt(situpCounter, 10) }]);
+
+            if (error) {
+                console.error(error);
+                feedbackDisplay.innerText = `上傳失敗：${error.message}`;
+            } else {
+                feedbackDisplay.innerText = `🎉 成績已成功上傳！完成 ${situpCounter} 下。`;
+            }
+        } catch (err) {
+            console.error(err);
+            feedbackDisplay.innerText = `網絡連線錯誤！`;
+        }
+
+        startBtn.style.display = 'block';
+        startBtn.innerText = '再次挑戰';
+        stopBtn.style.display = 'none';
+        studentIdInput.disabled = false;
+    }
+</script>
+
+</body>
+</html>
