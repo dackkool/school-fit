@@ -236,8 +236,8 @@
 
     // 頁面載入時檢查是否有 Session (已登入狀態)
     window.addEventListener('DOMContentLoaded', () => {
-        const savedStudentId = localStorage.getItem('current_student_id');
-        const savedName = localStorage.getItem('current_student_name');
+        const savedStudentId = sessionStorage.getItem('current_student_id');
+        const savedName = sessionStorage.getItem('current_student_name');
 
         if (savedStudentId) {
             showMenuView(savedName || savedStudentId);
@@ -345,8 +345,8 @@
 
     // 保存 LocalStorage 狀態
     function saveSession(studentId, name) {
-        localStorage.setItem('current_student_id', studentId);
-        localStorage.setItem('current_student_name', name);
+        sessionStorage.setItem('current_student_id', studentId);
+        sessionStorage.setItem('current_student_name', name);
     }
 
     // 切換至選單 View
@@ -358,8 +358,8 @@
 
     // 登出
     function handleLogout() {
-        localStorage.removeItem('current_student_id');
-        localStorage.removeItem('current_student_name');
+        sessionStorage.removeItem('current_student_id');
+        sessionStorage.removeItem('current_student_name');
         document.getElementById('menu-view').style.display = 'none';
         document.getElementById('auth-view').style.display = 'block';
         msgBox.innerText = '';
@@ -367,7 +367,7 @@
 
     // 修改後：在「新分頁」中開啟測驗頁面
     function navigateToExercise(pageUrl) {
-        const studentId = localStorage.getItem('current_student_id');
+        const studentId = sessionStorage.getItem('current_student_id');
         if (!studentId) {
             alert('請先登入！');
             return;
