@@ -365,10 +365,15 @@
         msgBox.innerText = '';
     }
 
-    // 跳轉到對應測驗網頁，並把學號透過 URL 帶過去
+    // 修改後：在「新分頁」中開啟測驗頁面
     function navigateToExercise(pageUrl) {
         const studentId = localStorage.getItem('current_student_id');
-        window.location.href = `${pageUrl}?student_id=${encodeURIComponent(studentId)}`;
+        if (!studentId) {
+            alert('請先登入！');
+            return;
+        }
+        // 使用 window.open 開啟新分頁，並帶入學號
+        window.open(`${pageUrl}?student_id=${encodeURIComponent(studentId)}`, '_blank');
     }
 </script>
 
