@@ -355,6 +355,28 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    // --- 2. 自動接收 student_id 邏輯 ---
+    window.addEventListener('DOMContentLoaded', () => {
+        // A. 優先從 URL 網址參數獲取 (?student_id=S001)
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlStudentId = urlParams.get('student_id');
+        
+        // B. 其次從 LocalStorage 本地儲存獲取
+        const localStudentId = localStorage.getItem('current_student_id');
+
+        const activeStudentId = urlStudentId || localStudentId;
+
+        if (activeStudentId) {
+            // 自動填入 AI 挑戰區的學號輸入框
+            const studentIdInput = document.getElementById('student-id');
+            if (studentIdInput) {
+                studentIdInput.value = activeStudentId;
+            }
+        }
+    });
+
+    
+
     const videoElement = document.getElementsByClassName('input_video')[0];
     const canvasElement = document.getElementsByClassName('output_canvas')[0];
     const canvasCtx = canvasElement.getContext('2d');
