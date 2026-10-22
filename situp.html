@@ -361,8 +361,8 @@
         const urlParams = new URLSearchParams(window.location.search);
         const urlStudentId = urlParams.get('student_id');
         
-        // B. 其次從 LocalStorage 本地儲存獲取
-        const localStudentId = localStorage.getItem('current_student_id');
+        // B. 其次從 SessionStorage 本地儲存獲取
+        const localStudentId = sessionStorage.getItem('current_student_id');
 
         const activeStudentId = urlStudentId || localStudentId;
 
@@ -378,9 +378,9 @@
     window.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
         const urlStudentId = urlParams.get('student_id');
-        const localStudentId = localStorage.getItem('current_student_id');
+        const localStudentId = sessionStorage.getItem('current_student_id');
 
-        // 安全檢查：如果網址上的學號跟 LocalStorage 登入的學號不符合，或者根本沒登入
+        // 安全檢查：如果網址上的學號跟 sessionStorage 登入的學號不符合，或者根本沒登入
         if (!localStudentId || (urlStudentId && urlStudentId !== localStudentId)) {
             alert('⚠️ 偵測到身分不符或未登入，請先重新登入！');
             window.location.href = 'index.html'; // 強制踢回主頁
