@@ -374,6 +374,27 @@
             }
         }
     });
+    // --- 3. 檢查student_id 要跟login一樣 ---
+    window.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlStudentId = urlParams.get('student_id');
+        const localStudentId = localStorage.getItem('current_student_id');
+
+        // 安全檢查：如果網址上的學號跟 LocalStorage 登入的學號不符合，或者根本沒登入
+        if (!localStudentId || (urlStudentId && urlStudentId !== localStudentId)) {
+            alert('⚠️ 偵測到身分不符或未登入，請先重新登入！');
+            window.location.href = 'index.html'; // 強制踢回主頁
+            return;
+        }
+
+        // 若安全通過，則自動填入並鎖定學號
+        const activeStudentId = localStudentId;
+        const studentIdInput = document.getElementById('student-id');
+        if (studentIdInput) {
+            studentIdInput.value = activeStudentId;
+            studentIdInput.disabled = true; // 鎖定輸入框，不允許隨意更改
+        }
+    });
 
     
 
