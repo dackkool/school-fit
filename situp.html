@@ -261,6 +261,41 @@
         }
         button.action-btn:disabled { background-color: #ccc; cursor: not-allowed; }
         button.action-btn:hover:not(:disabled) { opacity: 0.9; }
+        /* 當在手機或小螢幕裝置時，自動調整為上下直向排版 */
+        @media screen and (max-width: 768px) {
+            body {
+                padding: 4px;
+                align-items: flex-start;
+            }
+    
+            #app-container {
+                flex-direction: column !important; /* 左右分欄改為上下堆疊 */
+                height: auto !important;
+                max-height: none !important;
+            }
+
+            #video-pane {
+                width: 100% !important;
+                height: 320px !important; /* 手機上鏡頭固定高度 */
+            }
+
+            #ui-pane {
+                width: 100% !important;
+                height: auto !important;
+                max-height: 450px;
+            }
+    
+            /* 挑戰中時，手機鏡頭區全螢幕 */
+            #app-container.challenge-active #video-pane {
+                width: 100% !important;
+                height: 100vh !important;
+                position: fixed;
+                top: 0;
+                left: 0;
+                z-index: 100;
+            }
+        }
+
     </style>
 </head>
 <body>
