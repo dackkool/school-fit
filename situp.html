@@ -261,40 +261,46 @@
         }
         button.action-btn:disabled { background-color: #ccc; cursor: not-allowed; }
         button.action-btn:hover:not(:disabled) { opacity: 0.9; }
-        /* 當在手機或小螢幕裝置時，自動調整為上下直向排版 */
-        @media screen and (max-width: 768px) {
-            body {
-                padding: 4px;
-                align-items: flex-start;
-            }
-    
-            #app-container {
-                flex-direction: column !important; /* 左右分欄改為上下堆疊 */
-                height: auto !important;
-                max-height: none !important;
-            }
-
-            #video-pane {
-                width: 100% !important;
-                height: 320px !important; /* 手機上鏡頭固定高度 */
-            }
-
-            #ui-pane {
-                width: 100% !important;
-                height: auto !important;
-                max-height: 450px;
-            }
-    
-            /* 挑戰中時，手機鏡頭區全螢幕 */
-            #app-container.challenge-active #video-pane {
-                width: 100% !important;
-                height: 100vh !important;
-                position: fixed;
-                top: 0;
-                left: 0;
-                z-index: 100;
-            }
+        /* 手機與小螢幕裝置最佳化調整 */
+    @media screen and (max-width: 768px) {
+        body {
+            padding: 4px;
+            align-items: flex-start;
+            min-height: 100vh;
+            overflow-y: auto !important; /* 確保手機整頁可以滾動 */
         }
+    
+        #app-container {
+            flex-direction: column !important; /* 讓左右分欄變成上下堆疊 */
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+
+        #video-pane {
+            width: 100% !important;
+            height: 260px !important; /* 稍微縮小手機上的相機預覽高度，空出更多空間給下方按鈕 */
+            flex-shrink: 0;
+        }
+
+        #ui-pane {
+            width: 100% !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow-y: visible !important;
+            padding-bottom: 30px; /* 底部留白，避免按鈕貼底按不到 */
+        }
+    
+        /* 點擊「開始挑戰」進入挑戰中時，相機自動放大全螢幕 */
+        #app-container.challenge-active #video-pane {
+            width: 100% !important;
+            height: 100vh !important;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 100;
+        }
+    }
 
     </style>
 </head>
