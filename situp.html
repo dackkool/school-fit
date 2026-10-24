@@ -290,37 +290,47 @@
             padding-bottom: 40px; 
         }
 
-        /* 💡 關鍵：當手機轉為「橫向 (Landscape)」時的專屬排版 */
-        @media screen and (orientation: landscape) {
-            #app-container {
-                flex-direction: row !important; /* 橫向時改回左右並排，充分享受橫向寬度 */
-                height: 98vh !important;
-                max-height: 98vh !important;
-            }
-
-            #video-pane {
-                width: 55% !important;
-                height: 100% !important; /* 橫向時左側相機佔滿高度 */
-            }
-
-            #ui-pane {
-                width: 45% !important;
-                height: 100% !important;
-                overflow-y: auto !important; /* 右側面板可獨立滾動查看所有資料與按鈕 */
-                padding-bottom: 20px;
-            }
+        /* 手機與小螢幕裝置最佳化調整 */
+    @media screen and (max-width: 768px) {
+        body {
+            padding: 4px;
+            align-items: flex-start;
+            min-height: 100vh;
+            overflow-y: auto !important; /* 確保手機整頁可以滾動 */
         }
     
-         /* 點擊「開始挑戰」進入挑戰中時，相機自動放大全螢幕 */
+        #app-container {
+            flex-direction: column !important; /* 讓左右分欄變成上下堆疊 */
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+
+        #video-pane {
+            width: 100% !important;
+            height: 260px !important; /* 稍微縮小手機上的相機預覽高度，空出更多空間給下方按鈕 */
+            flex-shrink: 0;
+        }
+
+        #ui-pane {
+            width: 100% !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow-y: visible !important;
+            padding-bottom: 30px; /* 底部留白，避免按鈕貼底按不到 */
+        }
+    
+        /* 點擊「開始挑戰」進入挑戰中時，相機自動放大全螢幕 */
         #app-container.challenge-active #video-pane {
             width: 100% !important;
-            height: 100vh !important;
+            height: auto !important;
             position: fixed;
             top: 0;
             left: 0;
             z-index: 100;
         }
     }
+
 
 
     </style>
