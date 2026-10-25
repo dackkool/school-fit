@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>小學生 AI 雲端體適能系統 | 主頁</title>
+    <!-- Supabase JS 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
+        body {
+            margin: 0;
+            padding: 15px;
+            background-color: #fce4ec;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #main-card {
+            width: 100%;
+            max-width: 480px;
+            background-color: white;
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            padding: 24px;
+            text-align: center;
+        }
+
+        h1 { color: #ec407a; font-size: 1.6rem; margin: 0 0 5px 0; }
+        .subtitle { font-size: 0.85rem; color: #666; margin-bottom: 20px; }
+
+        /* Auth Form 切換頁籤 */
+        .auth-tabs {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 20px;
+        }
+        .auth-tab-btn {
+            flex: 1;
+            padding: 10px;
+            background: none;
+            border: none;
+            font-size: 1.05rem;
+            font-weight: bold;
+            color: #888;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .auth-tab-btn.active {
+            color: #ec407a;
+            border-bottom: 3.5px solid #ec407a;
+        }
+
+        .auth-form { display: none; flex-direction: column; text-align: left; }
+        .auth-form.active { display: flex; }
+
+        .input-group { margin-bottom: 12px; }
+        .input-group label { font-size: 0.9rem; color: #444; font-weight: bold; display: block; margin-bottom: 4px; }
+        .input-group input {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 1rem;
+            border-radius: 10px;
+            border: 1.5px solid #ccc;
+        }
+
+        button.btn-primary {
+            width: 100%;
+            padding: 12px;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            background-color: #ec407a;
+            margin-top: 10px;
+            transition: 0.2s;
+        }
+        button.btn-primary:hover { opacity: 0.9; }
+
+        #msg-box {
+            margin-top: 12px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            min-height: 24px;
+        }
+
+        /* 項目選擇選單區塊（登入後顯示） */
+        #menu-view { display: none; flex-direction: column; }
+        
+        .user-welcome {
+            background-color: #f1f8e9;
+            padding: 12px;
+            border-radius: 12px;
+            font-size: 1rem;
+            color: #33691e;
+            font-weight: bold;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logout-btn {
+            background-color: #e0e0e0;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
+        .exercise-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+
+        .exercise-card {
+            background: #fff;
+            border: 2px solid #f8bbd0;
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            text-decoration: none;
+            color: #333;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+        }
+        .exercise-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(236, 64, 122, 0.2);
+            border-color: #ec407a;
+        }
+
+        .exercise-icon { font-size: 2.2rem; margin-right: 12px; }
+        .exercise-info { text-align: left; flex: 1; }
+        .exercise-title { font-size: 1.15rem; font-weight: bold; color: #c2185b; }
+        .exercise-desc { font-size: 0.8rem; color: #666; margin-top: 2px; }
+        .arrow-icon { font-size: 1.3rem; color: #ec407a; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="main-card">
+    <!-- 1. 未登入：身分驗證區 (登入 / 註冊) -->
+    <div id="auth-view">
+        <h1>體適能 AI 雲端平台</h1>
+        <div class="subtitle">香港小學體適能自我挑戰系統</div>
+
+        <div class="auth-tabs">
+            <button class="auth-tab-btn active" onclick="switchAuthTab('login')">學生登入</button>
+            <button class="auth-tab-btn" onclick="switchAuthTab('register')">申請帳戶</button>
+        </div>
+
+        <!-- 表單 A: 登入 -->
+        <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+            <div class="input-group">
+                <label>學生學號：</label>
+                <input type="text" id="login-student-id" placeholder="例如: S001" required>
+            </div>
+            <div class="input-group">
+                <label>登入密碼：</label>
+                <input type="password" id="login-password" placeholder="請輸入密碼" required>
+            </div>
+            <button type="submit" class="btn-primary">立即登入</button>
+        </form>
+
+        <!-- 表單 B: 註冊 -->
+        <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+            <div class="input-group">
+                <label>學生姓名：</label>
+                <input type="text" id="reg-name" placeholder="例如: 陳小明" required>
+            </div>
+            <div class="input-group">
+                <label>學生學號：</label>
+                <input type="text" id="reg-student-id" placeholder="例如: S001" required>
+            </div>
+            <div class="input-group">
+                <label>設定密碼：</label>
+                <input type="password" id="reg-password" placeholder="建議 4 位或以上密碼" required>
+            </div>
+            <button type="submit" class="btn-primary" style="background-color: #4caf50;">成功申請並登入</button>
+        </form>
+
+        <div id="msg-box"></div>
+    </div>
+
+    <!-- 2. 已登入：項目選擇面板區 -->
+    <div id="menu-view">
+        <h1>選擇挑戰項目</h1>
+        <div class="subtitle">請選擇你想進行的體適能 AI 評估</div>
+
+        <div class="user-welcome">
+            <span>👋 歡迎，<span id="user-display-name">學生</span>！</span>
+            <button class="logout-btn" onclick="handleLogout()">登出</button>
+        </div>
+
+        <div class="exercise-grid">
+            <!-- 項目 1: 仰臥起坐 -->
+            <div class="exercise-card" onclick="navigateToExercise('situp.html')">
+                <div class="exercise-icon">🧘‍♂️</div>
+                <div class="exercise-info">
+                    <div class="exercise-title">一分鐘仰臥起坐</div>
+                    <div class="exercise-desc">量度腹部肌力與肌耐力 (AI 自動計數)</div>
+                </div>
+                <div class="arrow-icon">➔</div>
+            </div>
+
+            <!-- 項目 2: 坐位體前屈 -->
+            <div class="exercise-card" onclick="navigateToExercise('sit-n-reach.html')">
+                <div class="exercise-icon">📏</div>
+                <div class="exercise-info">
+                    <div class="exercise-title">坐位體前屈 (Sit & Reach)</div>
+                    <div class="exercise-desc">量度軀幹與腿後肌群柔軟度</div>
+                </div>
+                <div class="arrow-icon">➔</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 1. 請填入你自己的 Supabase 資料 ---
+    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
+    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const msgBox = document.getElementById('msg-box');
+
+    // 頁面載入時檢查是否有 Session (已登入狀態)
+    window.addEventListener('DOMContentLoaded', () => {
+        const savedStudentId = sessionStorage.getItem('current_student_id');
+        const savedName = sessionStorage.getItem('current_student_name');
+
+        if (savedStudentId) {
+            showMenuView(savedName || savedStudentId);
+        }
+    });
+
+    // 登入/註冊 Tab 切換
+    function switchAuthTab(tab) {
+        document.querySelectorAll('.auth-tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
+        msgBox.innerText = '';
+
+        if (tab === 'login') {
+            document.querySelectorAll('.auth-tab-btn')[0].classList.add('active');
+            document.getElementById('login-form').classList.add('active');
+        } else {
+            document.querySelectorAll('.auth-tab-btn')[1].classList.add('active');
+            document.getElementById('register-form').classList.add('active');
+        }
+    }
+
+    // 處理學生註冊
+    async function handleRegister(e) {
+        e.preventDefault();
+        const name = document.getElementById('reg-name').value.trim();
+        const studentId = document.getElementById('reg-student-id').value.trim();
+        const password = document.getElementById('reg-password').value.trim();
+
+        msgBox.style.color = '#ff9800';
+        msgBox.innerText = '正在建立帳戶...';
+
+        try {
+            // 檢查學號是否重複
+            const { data: existing } = await supabaseClient
+                .from('students_db')
+                .select('student_id')
+                .eq('student_id', studentId)
+                .maybeSingle();
+
+            if (existing) {
+                msgBox.style.color = '#f44336';
+                msgBox.innerText = '⚠️ 此學號已被註冊，請直接登入！';
+                return;
+            }
+
+            // 寫入 Supabase students 表
+            const { error } = await supabaseClient
+                .from('students_db')
+                .insert([{ student_id: studentId, name: name, pwd: password }]);
+
+            if (error) throw error;
+
+            msgBox.style.color = '#4caf50';
+            msgBox.innerText = '🎉 帳戶申請成功！正在登入...';
+            
+            // 登入狀態寫入 LocalStorage
+            saveSession(studentId, name);
+            setTimeout(() => showMenuView(name), 1000);
+
+        } catch (err) {
+            console.error(err);
+            msgBox.style.color = '#f44336';
+            msgBox.innerText = `申請失敗: ${err.message}`;
+        }
+    }
+
+    // 處理學生登入
+    async function handleLogin(e) {
+        e.preventDefault();
+        const studentId = document.getElementById('login-student-id').value.trim();
+        const password = document.getElementById('login-password').value.trim();
+
+        msgBox.style.color = '#ff9800';
+        msgBox.innerText = '驗證登入中...';
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('students_db')
+                .select('*')
+                .eq('student_id', studentId)
+                .eq('pwd', password)
+                .maybeSingle();
+
+            if (error) throw error;
+
+            if (!data) {
+                msgBox.style.color = '#f44336';
+                msgBox.innerText = '❌ 學號或密碼不正確！';
+                return;
+            }
+
+            msgBox.style.color = '#4caf50';
+            msgBox.innerText = '✅ 登入成功！';
+
+            const displayName = data.name || studentId;
+            saveSession(studentId, displayName);
+            setTimeout(() => showMenuView(displayName), 800);
+
+        } catch (err) {
+            console.error(err);
+            msgBox.style.color = '#f44336';
+            msgBox.innerText = `登入錯誤: ${err.message}`;
+        }
+    }
+
+    // 保存 LocalStorage 狀態
+    function saveSession(studentId, name) {
+        sessionStorage.setItem('current_student_id', studentId);
+        sessionStorage.setItem('current_student_name', name);
+    }
+
+    // 切換至選單 View
+    function showMenuView(name) {
+        document.getElementById('auth-view').style.display = 'none';
+        document.getElementById('menu-view').style.display = 'flex';
+        document.getElementById('user-display-name').innerText = name;
+    }
+
+    // 登出
+    function handleLogout() {
+        sessionStorage.removeItem('current_student_id');
+        sessionStorage.removeItem('current_student_name');
+        document.getElementById('menu-view').style.display = 'none';
+        document.getElementById('auth-view').style.display = 'block';
+        msgBox.innerText = '';
+    }
+
+    // 修改後：在「新分頁」中開啟測驗頁面
+    function navigateToExercise(pageUrl) {
+        const studentId = sessionStorage.getItem('current_student_id');
+        if (!studentId) {
+            alert('請先登入！');
+            return;
+        }
+        // 使用 window.open 開啟新分頁，並帶入學號
+        window.open(`${pageUrl}?student_id=${encodeURIComponent(studentId)}`, '_blank');
+    }
+</script>
+
+</body>
+</html>
