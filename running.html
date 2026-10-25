@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>校園智慧多機跑圈與計時系統 | AI 體適能</title>
+    <!-- MediaPipe 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <!-- Supabase JS 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
+        body {
+            margin: 0;
+            padding: 8px;
+            background-color: #e3f2fd;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #app-container {
+            position: relative;
+            width: 100%;
+            max-width: 1150px;
+            background-color: white;
+            border-radius: 16px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: row;
+            height: 94vh;
+            max-height: 760px;
+            overflow: hidden;
+        }
+
+        /* 左側：視像鏡頭區 */
+        #video-pane {
+            position: relative;
+            background-color: #111;
+            width: 55%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: width 0.4s ease;
+        }
+
+        .input_video { display: none; }
+        .output_canvas { width: 100%; height: 100%; object-fit: contain; }
+
+        /* 狀態指示燈 */
+        #body-status-badge {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: white;
+            background-color: #f44336;
+            z-index: 20;
+        }
+
+        /* 懸浮 HUD */
+        #immersive-hud {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            gap: 10px;
+            z-index: 20;
+        }
+        .hud-card {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 6px 14px;
+            border-radius: 12px;
+            text-align: center;
+            color: white;
+            backdrop-filter: blur(4px);
+        }
+        .hud-title { font-size: 0.65rem; color: #aaa; }
+        .hud-value { font-size: 1.5rem; font-weight: bold; }
+
+        /* 右側：功能面板 */
+        #ui-pane {
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            background-color: #fff;
+            width: 45%;
+            height: 100%;
+            overflow-y: auto;
+        }
+
+        /* Tab 導航列 */
+        .tab-header {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 8px;
+            flex-shrink: 0;
+            overflow-x: auto;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 8px 6px;
+            background: none;
+            border: none;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #888;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: 0.2s;
+        }
+        .tab-btn.active {
+            color: #2196f3;
+            border-bottom: 3.5px solid #2196f3;
+        }
+
+        .tab-content { display: none; flex-direction: column; justify-content: space-between; flex: 1; }
+        .tab-content.active { display: flex; }
+
+        h1 { color: #2196f3; text-align: center; font-size: 1.2rem; margin: 0 0 2px 0; }
+        .subtitle { font-size: 0.72rem; color: #666; text-align: center; margin-bottom: 6px; }
+        
+        .input-group { margin-bottom: 6px; }
+        .input-group label { font-size: 0.8rem; color: #444; font-weight: bold; display: block; margin-bottom: 3px; }
+        .input-group select, .input-group input {
+            width: 100%;
+            padding: 7px 10px;
+            font-size: 0.95rem;
+            border-radius: 8px;
+            border: 1.5px solid #ccc;
+        }
+
+        #score-board {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background-color: #e1f5fe;
+            padding: 6px;
+            border-radius: 12px;
+            margin: 4px 0;
+        }
+        #timer { font-size: 1.4rem; color: #ff9800; font-weight: bold; }
+        #lap-count { font-size: 2.2rem; color: #2196f3; font-weight: bold; }
+
+        #feedback {
+            background-color: #e8f5e9;
+            padding: 8px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: #2e7d32;
+            border: 1.5px solid #c8e6c9;
+            min-height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 6px;
+        }
+
+        .tips-box {
+            font-size: 0.75rem;
+            color: #01579b;
+            background-color: #e1f5fe;
+            padding: 6px 8px;
+            border-radius: 8px;
+            margin: 4px 0;
+            line-height: 1.3;
+        }
+
+        /* QR Code 顯示區 */
+        .qr-container {
+            text-align: center;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 10px;
+            border: 1px dashed #2196f3;
+        }
+        .qr-container img {
+            width: 160px;
+            height: 160px;
+            margin: 8px auto;
+            display: block;
+        }
+
+        /* 歷史記錄 */
+        #history-box {
+            flex: 1;
+            overflow-y: auto;
+            max-height: 220px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 6px;
+            background-color: #fafafa;
+        }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 10px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9rem;
+        }
+        .trend-card {
+            background-color: #e3f2fd;
+            border: 1px solid #bbdefb;
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            color: #0d47a1;
+            margin-bottom: 6px;
+        }
+
+        button.action-btn {
+            width: 100%;
+            padding: 9px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 22px;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            background-color: #2196f3;
+            margin-top: 4px;
+        }
+        button.action-btn:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        @media screen and (max-width: 768px) {
+            body { padding: 4px; align-items: flex-start; overflow-y: auto !important; }
+            #app-container { flex-direction: column !important; height: auto !important; }
+            #video-pane { width: 100% !important; height: 240px !important; flex-shrink: 0; }
+            #ui-pane { width: 100% !important; height: auto !important; padding-bottom: 40px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <!-- 左側：視像鏡頭區 -->
+    <div id="video-pane">
+        <div id="body-status-badge">❌ 尋找中...</div>
+        <div id="immersive-hud">
+            <div class="hud-card">
+                <div class="hud-title">模式</div>
+                <div id="hud-mode" class="hud-value" style="font-size: 1rem; color: #4caf50;">主機 (Main)</div>
+            </div>
+            <div class="hud-card">
+                <div class="hud-title">圈數</div>
+                <div id="hud-count" class="hud-value" style="color: #2196f3;">0</div>
+            </div>
+        </div>
+        <video class="input_video" playsinline></video>
+        <canvas class="output_canvas"></canvas>
+    </div>
+
+    <!-- 右側：功能面板 -->
+    <div id="ui-pane">
+        <div class="tab-header">
+            <button class="tab-btn active" onclick="switchTab('challenge')">🏃‍♂️ 跑圈主控</button>
+            <button class="tab-btn" onclick="switchTab('trackpoint')">📷 分站設定</button>
+            <button class="tab-btn" onclick="switchTab('qrcode')">📱 主機 QR</button>
+            <button class="tab-btn" onclick="switchTab('history')">📊 紀錄</button>
+        </div>
+
+        <!-- TAB 1: 跑圈主控/挑戰區 -->
+        <div id="tab-challenge" class="tab-content active">
+            <div>
+                <h1>智慧多機跑圈系統</h1>
+                <div class="subtitle" id="device-role-subtitle">當前身分：主機 (Main Device)</div>
+            </div>
+
+            <div class="input-group">
+                <label>當前操作學生學號：</label>
+                <input type="text" id="student-id" placeholder="例如: S001">
+            </div>
+
+            <div class="tips-box" id="mode-tips">
+                💡 <b>提示：</b>本機為經過 Session 驗證的<b>主機</b>。您可以直接開始計時，或讓其他手機掃描主機 QR Code 成為檢查點分機。
+            </div>
+
+            <div id="score-board">
+                <div>
+                    <div style="font-size:0.7rem; color:#666;">總計時間</div>
+                    <div id="timer">00:00</div>
+                </div>
+                <div>
+                    <div style="font-size:0.7rem; color:#666;">有效圈數</div>
+                    <div id="lap-count">0</div>
+                </div>
+            </div>
+
+            <div id="feedback">請確認學生全身入鏡後點擊開始。</div>
+
+            <div>
+                <button id="start-btn" class="action-btn" disabled>等待全身入鏡...</button>
+                <button id="stop-btn" class="action-btn" style="background-color: #f44336; display: none;">結束跑圈並上傳成績</button>
+            </div>
+        </div>
+
+        <!-- TAB 2: 分站設定 (Trackpoint Mode) -->
+        <div id="tab-trackpoint" class="tab-content" style="display: none;">
+            <div>
+                <h1>分站攝影機設定 (Trackpoint)</h1>
+                <div class="subtitle">將此手機變成特定檢查點相機</div>
+            </div>
+
+            <div class="input-group">
+                <label>設定此裝置的角色：</label>
+                <select id="device-role-select" onchange="changeDeviceRole()">
+                    <option value="main">主機模式 (Main Hub - 負責計圈)</option>
+                    <option value="cp2">檢查點 2 攝影機 (Checkpoint 2)</option>
+                    <option value="cp3">檢查點 3 攝影機 (Checkpoint 3)</option>
+                </select>
+            </div>
+
+            <div class="tips-box">
+                ℹ️ <b>說明：</b>若這台手機不是主登入裝置，或是你想把它放在跑道轉彎處當作感應點，請在此切換為「檢查點 2/3」。當學生經過時，本機會自動透過雲端廣播發送訊號給主機！
+            </div>
+
+            <div style="text-align: center; padding: 15px; background: #fff3e0; border-radius: 8px; color: #e65100; font-size: 0.85rem;">
+                📡 <b>即時聯机狀態：</b><span id="realtime-status">已連線至 Supabase 頻道</span>
+            </div>
+        </div>
+
+        <!-- TAB 3: QR Code 顯示區 -->
+        <div id="tab-qrcode" class="tab-content" style="display: none;">
+            <div>
+                <h1>掃描成為 Trackpoint 分機</h1>
+                <div class="subtitle">用其他手機掃描以加入跑圈系統</div>
+            </div>
+
+            <div class="qr-container">
+                <p style="margin: 0; font-weight: bold; color: #333; font-size: 0.85rem;">請用其他手機鏡頭掃描下方 QR Code：</p>
+                <!-- 使用公開 API 即時生成目標網址的 QR Code -->
+                <img id="qr-img" src="" alt="QR Code">
+                <p style="margin: 0; font-size: 0.75rem; color: #666; word-break: break-all;">https://school-fit-one.vercel.app/running.html</p>
+            </div>
+
+            <div class="tips-box" style="margin-top: 8px;">
+                💡 <b>使用步驟：</b><br>
+                1. 其他手機掃描後會開啟跑圈網頁。<br>
+                2. 在分機手機點擊<b>「分站設定」</b>，切換為「檢查點 2」或「檢查點 3」。<br>
+                3. 架設在跑道不同位置即可多機同步！
+            </div>
+        </div>
+
+        <!-- TAB 4: 歷史紀錄 -->
+        <div id="tab-history" class="tab-content" style="display: none;">
+            <div>
+                <h1>跑圈過往紀錄</h1>
+                <div class="subtitle">雲端同步成績</div>
+            </div>
+
+            <div id="trend-analysis" class="trend-card">
+                📈 <b>趨勢分析：</b>查看個人最佳表現。
+            </div>
+
+            <div id="history-box">
+                <div style="text-align: center; color: #888; padding: 20px;">尚無紀錄</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 1. 請填入你的 Supabase 設定 ---
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // --- 2. Session 驗證與主機判定 ---
+    window.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlStudentId = urlParams.get('student_id');
+        const localStudentId = sessionStorage.getItem('current_student_id');
+
+        if (!localStudentId || (urlStudentId && urlStudentId !== localStudentId)) {
+            alert('⚠️ 偵測到身分不符或未登入，請先重新登入！');
+            window.location.href = 'index.html';
+            return;
+        }
+
+        const studentIdInput = document.getElementById('student-id');
+        if (studentIdInput) {
+            studentIdInput.value = localStudentId;
+            studentIdInput.disabled = true;
+        }
+
+        // 動態載入 QR Code 圖片
+        const targetUrl = encodeURIComponent("https://school-fit-one.vercel.app/running.html");
+        document.getElementById('qr-img').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${targetUrl}`;
+
+        // 初始化 Supabase Realtime 頻道以進行多機廣播
+        initRealtimeChannel();
+    });
+
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const canvasCtx = canvasElement.getContext('2d');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const lapCountDisplay = document.getElementById('lap-count');
+    const timerDisplay = document.getElementById('timer');
+    const hudCount = document.getElementById('hud-count');
+    const feedbackDisplay = document.getElementById('feedback');
+    const studentIdInput = document.getElementById('student-id');
+    const bodyStatusBadge = document.getElementById('body-status-badge');
+    const hudMode = document.getElementById('hud-mode');
+
+    let lapCounter = 0;
+    let isRunning = false;
+    let startTime = null;
+    let timerInterval = null;
+    let currentRole = 'main'; // 'main', 'cp2', 'cp3'
+    let supabaseChannel = null;
+    let lastTriggerTime = 0;
+
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+            content.style.display = 'none';
+        });
+
+        const tabs = { 'challenge': 0, 'trackpoint': 1, 'qrcode': 2, 'history': 3 };
+        document.querySelectorAll('.tab-btn')[tabs[tabName]].classList.add('active');
+        const target = document.getElementById(`tab-${tabName}`);
+        target.classList.add('active');
+        target.style.display = 'flex';
+
+        if (tabName === 'history') fetchStudentHistory();
+    }
+
+    const synth = window.speechSynthesis;
+    const speak = (text) => {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'zh-HK';
+        synth.cancel();
+        synth.speak(utter);
+    };
+
+    function checkFullBody(landmarks) {
+        const keyPoints = [0, 11, 12, 23, 24];
+        return keyPoints.every(idx => landmarks[idx] && landmarks[idx].visibility > 0.5);
+    }
+
+    // --- 3. Supabase Realtime 多機同步頻道 ---
+    function initRealtimeChannel() {
+        supabaseChannel = supabaseClient.channel('school_running_room', {
+            config: { broadcast: { self: true } }
+        });
+
+        supabaseChannel
+            .on('broadcast', { event: 'checkpoint_trigger' }, payload => {
+                const data = payload.payload;
+                // 只有當前裝置是「主機 (main)」時，才接收分站傳來的過點訊號並累計圈數
+                if (currentRole === 'main' && isRunning) {
+                    handleMainDeviceReceiveTrigger(data.student_id, data.checkpoint_id);
+                }
+            })
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    document.getElementById('realtime-status').innerText = '已成功連線至雲端頻道';
+                }
+            });
+    }
+
+    // 切換裝置角色 (主機 vs 檢查點分機)
+    function changeDeviceRole() {
+        currentRole = document.getElementById('device-role-select').value;
+        const roleSubtitle = document.getElementById('device-role-subtitle');
+        
+        if (currentRole === 'main') {
+            hudMode.innerText = '主機 (Main)';
+            hudMode.style.color = '#4caf50';
+            roleSubtitle.innerText = '當前身分：主機 (Main Device - 負責統籌計圈)';
+            document.getElementById('mode-tips').innerHTML = '💡 <b>提示：</b>本機為主機，負責接收各分站訊號並計算總圈數。';
+        } else {
+            hudMode.innerText = `分站 (${currentRole.toUpperCase()})`;
+            hudMode.style.color = '#ff9800';
+            roleSubtitle.innerText = `當前身分：${currentRole.toUpperCase()} 檢查點攝影機`;
+            document.getElementById('mode-tips').innerHTML = `💡 <b>提示：</b>本機已變成 <b>${currentRole.toUpperCase()}</b> 分機。當鏡頭偵測到學生時，會自動無線發送給主機！`;
+        }
+    }
+
+    function onResults(results) {
+        canvasElement.width = videoElement.videoWidth || 640;
+        canvasElement.height = videoElement.videoHeight || 480;
+
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        canvasCtx.scale(-1, 1);
+        canvasCtx.translate(-canvasElement.width, 0);
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.poseLandmarks) {
+            drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#2196f3', lineWidth: 3});
+            drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#ff9800', lineWidth: 1, radius: 4});
+
+            const isVisible = checkFullBody(results.poseLandmarks);
+
+            if (!isRunning) {
+                if (isVisible) {
+                    bodyStatusBadge.style.backgroundColor = '#4caf50';
+                    bodyStatusBadge.innerText = '✅ 全身就位';
+                    startBtn.disabled = false;
+                    startBtn.innerText = currentRole === 'main' ? '點擊開始跑圈' : '啟動分站感應中...';
+                } else {
+                    bodyStatusBadge.style.backgroundColor = '#f44336';
+                    bodyStatusBadge.innerText = '❌ 請站遠一點全身入鏡';
+                    startBtn.disabled = true;
+                }
+            } else {
+                // 運行中偵測過點
+                const now = Date.now();
+                if (now - lastTriggerTime > 3500) { // 冷卻時間 3.5 秒
+                    lastTriggerTime = now;
+                    const studentId = studentIdInput.value.trim();
+
+                    if (currentRole === 'main') {
+                        // 主機本身兼任起終點 (CP1)
+                        handleMainDeviceReceiveTrigger(studentId, 1);
+                    } else {
+                        // 分機廣播訊號給主機
+                        const cpId = currentRole === 'cp2' ? 2 : 3;
+                        feedbackDisplay.innerText = `📡 分站 ${cpId} 偵測到學生，已發送訊號！`;
+                        speak(`分站 ${cpId} 通過`);
+                        
+                        supabaseChannel.send({
+                            type: 'broadcast',
+                            event: 'checkpoint_trigger',
+                            payload: { student_id: studentId, checkpoint_id: cpId }
+                        });
+                    }
+                }
+            }
+        }
+        canvasCtx.restore();
+    }
+
+    const pose = new Pose({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    pose.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+        onFrame: async () => { await pose.send({image: videoElement}); },
+        width: 640, height: 480
+    });
+    camera.start();
+
+    // 主機接收過點邏輯
+    function handleMainDeviceReceiveTrigger(studentId, cpId) {
+        if (cpId === 1) {
+            lapCounter++;
+            lapCountDisplay.innerText = lapCounter;
+            hudCount.innerText = lapCounter;
+            speak(`完成第 ${lapCounter} 圈`);
+            feedbackDisplay.innerText = `🎉 主機偵測：通過起終點！完成第 ${lapCounter} 圈`;
+        } else {
+            feedbackDisplay.innerText = `📍 收到分站 ${cpId} 廣播：學生已通過該檢查點！`;
+            speak(`通過檢查點 ${cpId}`);
+        }
+    }
+
+    startBtn.addEventListener('click', () => {
+        isRunning = true;
+        lapCounter = 0;
+        lapCountDisplay.innerText = '0';
+        hudCount.innerText = '0';
+        startTime = Date.now();
+
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+        studentIdInput.disabled = true;
+
+        speak("跑圈開始，加油！");
+        feedbackDisplay.innerText = "跑圈計時開始！";
+
+        timerInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+            const secs = String(elapsed % 60).padStart(2, '0');
+            timerDisplay.innerText = `${mins}:${secs}`;
+        }, 1000);
+    });
+
+    stopBtn.addEventListener('click', endRunningChallenge);
+
+    async function endRunningChallenge() {
+        clearInterval(timerInterval);
+        isRunning = false;
+
+        const studentId = studentIdInput.value.trim();
+        feedbackDisplay.innerText = `正在上傳成績至 Supabase...`;
+        speak(`挑戰結束，總共完成 ${lapCounter} 圈。`);
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('fitness_records')
+                .insert([{ 
+                    student_id: studentId, 
+                    category: 'running', 
+                    score_value: parseFloat(lapCounter) 
+                }]);
+
+            if (error) {
+                feedbackDisplay.innerText = `上傳失敗：${error.message}`;
+            } else {
+                feedbackDisplay.innerText = `🎉 成績已成功上傳！共完成 ${lapCounter} 圈。`;
+            }
+        } catch (err) {
+            feedbackDisplay.innerText = `網絡連線錯誤！`;
+        }
+
+        startBtn.style.display = 'block';
+        startBtn.style.backgroundColor = '#2196f3';
+        startBtn.innerText = '再次開始跑圈';
+        stopBtn.style.display = 'none';
+        studentIdInput.disabled = false;
+    }
+
+    async function fetchStudentHistory() {
+        const queryId = studentIdInput.value.trim();
+        const historyBox = document.getElementById('history-box');
+        const trendAnalysis = document.getElementById('trend-analysis');
+        if (!queryId) return;
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('fitness_records')
+                .select('*')
+                .eq('student_id', queryId)
+                .eq('category', 'running')
+                .order('created_at', { ascending: false })
+                .limit(10);
+
+            if (error) throw error;
+            if (!data || data.length === 0) {
+                historyBox.innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">尚無跑圈紀錄</div>`;
+                return;
+            }
+
+            let html = '';
+            let scores = [];
+            data.forEach((row, index) => {
+                const d = new Date(row.created_at);
+                html += `<div class="history-item"><span>第 ${data.length - index} 次 (${d.toLocaleDateString('zh-HK')})</span><strong>${row.score_value} 圈</strong></div>`;
+                scores.push(row.score_value);
+            });
+            historyBox.innerHTML = html;
+            trendAnalysis.innerHTML = `<b>學號：${queryId} | 個人最高紀錄：${Math.max(...scores)} 圈</b>`;
+        } catch (err) {
+            historyBox.innerHTML = '<div style="text-align: center; color: red; padding: 20px;">查詢發生錯誤</div>';
+        }
+    }
+</script>
+
+</body>
+</html>
