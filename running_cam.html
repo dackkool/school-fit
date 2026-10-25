@@ -32,14 +32,14 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
     let supabaseChannel = null;
     let lastSendTime = 0;
-    let faceMatcher = null; // 人臉匹配器
+    let faceMatcher = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -51,15 +51,14 @@
         startCamera();
     });
 
-    // 載入 AI 模型並從 Supabase 下載所有學生人臉 Descriptor
     async function loadModelsAndStudentFaceDB() {
-        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/cddlib/face-api.js/models';
+        // 🚀 指向專案內置的 models 資料夾
+        const MODEL_URL = './models';
         try {
             await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
             await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
             await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
 
-            // 從 Supabase 下載已有人臉特徵的學生
             const { data, error } = await supabaseClient
                 .from('students_db')
                 .select('student_id, name, face_encoding')
@@ -83,7 +82,7 @@
             });
 
             if (labeledDescriptors.length > 0) {
-                faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5); // 0.5 門檻值
+                faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
                 document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！相機就緒中...`;
             }
         } catch (err) {
@@ -128,7 +127,6 @@
             const displaySize = { width: video.clientWidth, height: video.clientHeight };
             faceapi.matchDimensions(canvas, displaySize);
 
-            // 辨識鏡頭前所有人臉
             const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
             const resizedDetections = faceapi.resizeResults(detections, displaySize);
 
@@ -140,24 +138,20 @@
                 const box = detection.detection.box;
 
                 if (match.label !== 'unknown') {
-                    // 🎯 認出登記過的學生！
                     const drawBox = new faceapi.draw.DrawBox(box, { label: `✅ ${match.label}`, boxColor: '#4caf50' });
                     drawBox.draw(canvas);
-
-                    // 觸發過點發送至 Hub
                     sendTriggerToHub(match.label);
                 } else {
-                    // ❌ 其他路人小朋友：標示紅框並忽略
                     const drawBox = new faceapi.draw.DrawBox(box, { label: '未登記學生', boxColor: '#f44336' });
                     drawBox.draw(canvas);
                 }
             });
-        }, 500); // 每 0.5 秒比對一次
+        }, 500);
     }
 
     function sendTriggerToHub(studentId) {
         const now = Date.now();
-        if (now - lastSendTime < 3500) return; // 冷卻時間 3.5 秒
+        if (now - lastSendTime < 3500) return;
         lastSendTime = now;
 
         const cpId = parseInt(role.replace('cp', ''));
