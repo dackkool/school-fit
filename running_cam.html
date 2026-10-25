@@ -3,114 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>跑圈分站感應相機 | Trackpoint</title>
-    <!-- MediaPipe Face Detection -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <title>跑圈分站人臉辨識相機 | Trackpoint</title>
+    <!-- face-api.js -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <!-- Supabase JS 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <style>
         * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
-        body {
-            margin: 0;
-            padding: 10px;
-            background-color: #111;
-            color: white;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-        }
-
-        #container {
-            width: 100%;
-            max-width: 500px;
-            text-align: center;
-        }
-
-        #badge {
-            background-color: #ff9800;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 1.1rem;
-            font-weight: bold;
-            margin-bottom: 10px;
-            display: inline-block;
-        }
-
-        video { display: none; }
-        canvas {
-            width: 100%;
-            max-height: 55vh;
-            border-radius: 16px;
-            border: 3px solid #ff9800;
-            object-fit: cover;
-        }
-
-        #status-text {
-            margin-top: 15px;
-            font-size: 0.95rem;
-            background: rgba(255,255,255,0.1);
-            padding: 10px;
-            border-radius: 8px;
-        }
-
-        .trigger-btn {
-            background-color: #4caf50;
-            color: white;
-            border: none;
-            padding: 12px;
-            font-size: 1.1rem;
-            border-radius: 25px;
-            width: 100%;
-            margin-top: 12px;
-            font-weight: bold;
-            cursor: pointer;
-        }
+        body { margin: 0; padding: 10px; background-color: #111; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
+        #container { width: 100%; max-width: 500px; text-align: center; }
+        #badge { background-color: #ff9800; padding: 8px 16px; border-radius: 20px; font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; display: inline-block; }
+        .video-wrapper { position: relative; width: 100%; max-height: 55vh; border-radius: 16px; overflow: hidden; border: 3px solid #ff9800; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #status-text { margin-top: 15px; font-size: 0.95rem; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; }
     </style>
 </head>
 <body>
 
 <div id="container">
-    <div id="badge">📷 正在載入分站身分...</div>
-    <div>
-        <video class="input_video" playsinline></video>
-        <canvas class="output_canvas"></canvas>
+    <div id="badge">📷 正在載入分站...</div>
+    <div class="video-wrapper">
+        <video id="cam-video" autoplay muted playsinline></video>
+        <canvas id="overlay-canvas"></canvas>
     </div>
-    <div id="status-text">正在連線至主機頻道...</div>
-    <button class="trigger-btn" onclick="manualTrigger()">⚡ 手動模擬學生過點</button>
+    <div id="status-text">🔄 正在從雲端載入人臉數據庫與 AI 模型...</div>
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
     let supabaseChannel = null;
     let lastSendTime = 0;
+    let faceMatcher = null; // 人臉匹配器
 
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
         role = urlParams.get('role') || 'cp1';
-
-        const badge = document.getElementById('badge');
-        badge.innerText = `📡 當前分站：${role.toUpperCase()}`;
+        document.getElementById('badge').innerText = `📡 分站相機：${role.toUpperCase()}`;
 
         initTrackpointRealtime();
+        await loadModelsAndStudentFaceDB();
         startCamera();
     });
 
-    function initTrackpointRealtime() {
-        supabaseChannel = supabaseClient.channel('school_running_room', {
-            config: { broadcast: { self: true } }
-        });
+    // 載入 AI 模型並從 Supabase 下載所有學生人臉 Descriptor
+    async function loadModelsAndStudentFaceDB() {
+        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/cddlib/face-api.js/models';
+        try {
+            await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
 
+            // 從 Supabase 下載已有人臉特徵的學生
+            const { data, error } = await supabaseClient
+                .from('students_db')
+                .select('student_id, name, face_encoding')
+                .not('face_encoding', 'is', null);
+
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                document.getElementById('status-text').innerText = '⚠️ 雲端尚無學生樣貌數據，請先在 Hub 主機進行登記！';
+                return;
+            }
+
+            const labeledDescriptors = [];
+            data.forEach(student => {
+                if (student.face_encoding) {
+                    try {
+                        const arr = new Float32Array(JSON.parse(student.face_encoding));
+                        labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(student.student_id, [arr]));
+                    } catch (e) { console.error(e); }
+                }
+            });
+
+            if (labeledDescriptors.length > 0) {
+                faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5); // 0.5 門檻值
+                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！相機就緒中...`;
+            }
+        } catch (err) {
+            console.error(err);
+            document.getElementById('status-text').innerText = '❌ 人臉模型或數據庫載入失敗！';
+        }
+    }
+
+    function initTrackpointRealtime() {
+        supabaseChannel = supabaseClient.channel('school_running_room', { config: { broadcast: { self: true } } });
         supabaseChannel.subscribe((status) => {
             if (status === 'SUBSCRIBED') {
-                document.getElementById('status-text').innerText = `✅ 已連線！相機隨時可感應學生過點。`;
                 setInterval(() => {
                     supabaseChannel.send({
                         type: 'broadcast',
@@ -122,13 +107,60 @@
         });
     }
 
-    function sendTriggerToHub() {
+    async function startCamera() {
+        const video = document.getElementById('cam-video');
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            video.srcObject = stream;
+            video.addEventListener('play', onVideoPlay);
+        } catch (err) {
+            alert('無法存取相機！');
+        }
+    }
+
+    function onVideoPlay() {
+        const video = document.getElementById('cam-video');
+        const canvas = document.getElementById('overlay-canvas');
+
+        setInterval(async () => {
+            if (!faceMatcher || video.paused || video.ended) return;
+
+            const displaySize = { width: video.clientWidth, height: video.clientHeight };
+            faceapi.matchDimensions(canvas, displaySize);
+
+            // 辨識鏡頭前所有人臉
+            const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+            const resizedDetections = faceapi.resizeResults(detections, displaySize);
+
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            resizedDetections.forEach(detection => {
+                const match = faceMatcher.findBestMatch(detection.descriptor);
+                const box = detection.detection.box;
+
+                if (match.label !== 'unknown') {
+                    // 🎯 認出登記過的學生！
+                    const drawBox = new faceapi.draw.DrawBox(box, { label: `✅ ${match.label}`, boxColor: '#4caf50' });
+                    drawBox.draw(canvas);
+
+                    // 觸發過點發送至 Hub
+                    sendTriggerToHub(match.label);
+                } else {
+                    // ❌ 其他路人小朋友：標示紅框並忽略
+                    const drawBox = new faceapi.draw.DrawBox(box, { label: '未登記學生', boxColor: '#f44336' });
+                    drawBox.draw(canvas);
+                }
+            });
+        }, 500); // 每 0.5 秒比對一次
+    }
+
+    function sendTriggerToHub(studentId) {
         const now = Date.now();
         if (now - lastSendTime < 3500) return; // 冷卻時間 3.5 秒
         lastSendTime = now;
 
         const cpId = parseInt(role.replace('cp', ''));
-        const studentId = sessionStorage.getItem('current_student_id') || "S001";
 
         supabaseChannel.send({
             type: 'broadcast',
@@ -136,46 +168,8 @@
             payload: { student_id: studentId, checkpoint_id: cpId, timestamp: now }
         });
 
-        document.getElementById('status-text').innerText = `🚀 已發送 [${role.toUpperCase()}] 過點訊號！`;
-        setTimeout(() => {
-            document.getElementById('status-text').innerText = `✅ 運行中：隨時準備偵測下一位學生。`;
-        }, 2000);
+        document.getElementById('status-text').innerText = `🎉 認出學生 [${studentId}]，已發送 [${role.toUpperCase()}] 過點！`;
     }
-
-    function manualTrigger() {
-        sendTriggerToHub();
-    }
-
-    const videoElement = document.getElementsByClassName('input_video')[0];
-    const canvasElement = document.getElementsByClassName('output_canvas')[0];
-    const canvasCtx = canvasElement.getContext('2d');
-
-    function onResults(results) {
-        canvasElement.width = videoElement.videoWidth || 480;
-        canvasElement.height = videoElement.videoHeight || 640;
-
-        canvasCtx.save();
-        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-        if (results.detections && results.detections.length > 0) {
-            const now = Date.now();
-            if (now - lastSendTime > 4000) {
-                sendTriggerToHub();
-            }
-        }
-        canvasCtx.restore();
-    }
-
-    const faceDetection = new FaceDetection({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`});
-    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.6 });
-    faceDetection.onResults(onResults);
-
-    const camera = new Camera(videoElement, {
-        onFrame: async () => { await faceDetection.send({image: videoElement}); },
-        width: 480, height: 640
-    });
-    camera.start();
 </script>
 
 </body>
