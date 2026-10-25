@@ -39,6 +39,14 @@
         .input-group label { font-size: 0.85rem; color: #444; font-weight: bold; display: block; margin-bottom: 4px; }
         .input-group input, .input-group select { width: 100%; padding: 8px 10px; font-size: 0.95rem; border-radius: 8px; border: 1.5px solid #ccc; }
 
+        /* 🔒 鎖定學號欄位樣式 (唯讀灰色背景) */
+        input[readonly] {
+            background-color: #f0f0f0;
+            color: #555;
+            cursor: not-allowed;
+            border: 1.5px solid #d0d0d0 !important;
+        }
+
         button.btn-primary { width: 100%; padding: 10px; font-size: 1rem; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background-color: #1565c0; margin-top: 5px; }
         button.btn-primary:hover { opacity: 0.9; }
 
@@ -64,8 +72,9 @@
     <div id="tab-monitor" class="tab-content active">
         <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
             <div style="flex: 1;">
-                <label style="font-size: 0.85rem; font-weight: bold;">當前測驗學生學號：</label>
-                <input type="text" id="active-student-id" placeholder="載入中..." style="padding: 6px; width: 100%; border-radius: 6px; border: 1px solid #ccc;">
+                <label style="font-size: 0.85rem; font-weight: bold;">當前測驗學生學號 (已鎖定，不可更改)：</label>
+                <!-- 🔒 加上 readonly 屬性，防止手動修改 -->
+                <input type="text" id="active-student-id" readonly placeholder="尚未登入" style="padding: 6px; width: 100%; border-radius: 6px;">
             </div>
             <div>
                 <button class="btn-primary" onclick="resetActiveStudent()" style="padding: 8px 16px; margin-top: 18px;">重新計時</button>
@@ -106,8 +115,9 @@
         </div>
         <div id="model-status" style="text-align: center; font-size: 0.8rem; color: #ff9800; margin-bottom: 8px;">🔄 正在載入 AI 人臉模型...</div>
         <div class="input-group">
-            <label>學生學號：</label>
-            <input type="text" id="reg-id" placeholder="例如: S001">
+            <label>學生學號 (已鎖定)：</label>
+            <!-- 🔒 同樣鎖定登記頁面的學號 -->
+            <input type="text" id="reg-id" readonly placeholder="尚未登入" style="background-color: #f0f0f0;">
         </div>
         <div class="input-group">
             <label>學生姓名：</label>
@@ -118,24 +128,31 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
     let trackpointHeartbeats = {};
     let currentLapCount = 0;
     
-    // 嚴格順序追蹤變數
-    let expectedNextCp = 1; // 預期下一個要通過的檢查點 (從 1 開始)
-    let lapStartTime = null; // 當前圈的起跑時間
-    let recordedLapTimes = []; // 儲存每圈的秒數紀錄
+    let expectedNextCp = 1; 
+    let lapStartTime = null; 
+    let recordedLapTimes = []; 
 
     window.addEventListener('DOMContentLoaded', async () => {
+        // 從 sessionStorage 讀取登入學號並鎖定
         const loggedStudentId = sessionStorage.getItem('current_student_id');
+        const loggedName = sessionStorage.getItem('current_student_name');
+
         if (loggedStudentId) {
             document.getElementById('active-student-id').value = loggedStudentId;
             document.getElementById('reg-id').value = loggedStudentId;
+            if (loggedName) document.getElementById('reg-name').value = loggedName;
+        } else {
+            // 測試用預設值（若未從 index 登入）
+            document.getElementById('active-student-id').value = "S001";
+            document.getElementById('reg-id').value = "S001";
         }
 
         updateStatusGrid();
@@ -205,9 +222,16 @@
     function initHubRealtime() {
         supabaseChannel = supabaseClient.channel('school_running_room', { config: { broadcast: { self: true } } });
         supabaseChannel
-            .on('broadcast', { event: 'heartbeat' }, payload => { trackpointHeartbeats[payload.payload.checkpoint_id] = Date.now(); })
-            .on('broadcast', { event: 'checkpoint_trigger' }, payload => { handleTrackpointTrigger(payload.payload.student_id, payload.payload.checkpoint_id, payload.payload.timestamp); })
-            .subscribe();
+            .on('broadcast', { event: 'heartbeat' }, payload => { 
+                const cpId = payload.payload.checkpoint_id;
+                trackpointHeartbeats[cpId] = Date.now(); 
+            })
+            .on('broadcast', { event: 'checkpoint_trigger' }, payload => { 
+                handleTrackpointTrigger(payload.payload.student_id, payload.payload.checkpoint_id, payload.payload.timestamp); 
+            })
+            .subscribe((status) => {
+                console.log("Supabase Realtime 連線狀態: ", status);
+            });
     }
 
     function updateStatusGrid() {
@@ -242,7 +266,6 @@
         }
     }
 
-    // 🚀 嚴格順序過點驗證邏輯
     function handleTrackpointTrigger(studentId, cpId, timestamp) {
         const totalCps = parseInt(document.getElementById('cp-count-select').value);
         const logBox = document.getElementById('live-log');
@@ -250,17 +273,13 @@
 
         if (logBox.innerHTML.includes('請由 CP1')) logBox.innerHTML = '';
 
-        // 檢查是否為當前預期通過的站點
         if (cpId === expectedNextCp) {
             if (cpId === 1) {
-                // 如果是起點/第一站
                 if (lapStartTime === null) {
-                    // 第一次出發，開始計時
                     lapStartTime = timestamp;
                     logBox.innerHTML = `<div class="log-item"><span>🚀 學生 [<b>${studentId}</b>] 從 <b>檢查點 1</b> 出發起跑！</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
                     speak('開始起跑');
                 } else {
-                    // 已經跑過一圈並回到 CP1，代表完成完整一圈！
                     const lapDurationSec = ((timestamp - lapStartTime) / 1000).toFixed(2);
                     currentLapCount++;
                     recordedLapTimes.push({ lap: currentLapCount, duration: parseFloat(lapDurationSec) });
@@ -269,20 +288,15 @@
                     logBox.innerHTML = `<div class="log-item" style="background: #e8f5e9;"><span>🏆 <b>完成第 ${currentLapCount} 圈！</b> 圈速: <b>${lapDurationSec} 秒</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
                     speak(`完成第 ${currentLapCount} 圈，圈速 ${Math.floor(lapDurationSec)} 秒`);
 
-                    // 重設下一圈計時起點
                     lapStartTime = timestamp;
                 }
             } else {
-                // 通過中途檢查點 (CP2, CP3...)
                 logBox.innerHTML = `<div class="log-item"><span>學生 [<b>${studentId}</b>] 通過 <b>檢查點 ${cpId}</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
                 speak(`檢查點 ${cpId} 通過`);
             }
 
-            // 更新下一個預期通過的檢查點 (若到最後一站，下一個循環回到 CP1)
             expectedNextCp = (cpId % totalCps) + 1;
-
         } else {
-            // ❌ 順序錯誤（例如漏站或逆向）
             logBox.innerHTML = `<div class="log-item" style="color: #d32f2f;"><span>⚠️ 順序錯誤：預期應通過 CP${expectedNextCp}，卻收到 CP${cpId}</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
         }
     }
@@ -296,21 +310,19 @@
         document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">已重新計時，請由 CP1 出發...</div>`;
     }
 
-    // 💾 將每一圈的「圈速」上傳至 Supabase
     async function uploadLapScores() {
         const studentId = document.getElementById('active-student-id').value.trim();
-        if (!studentId) { alert('請先輸入學生學號！'); return; }
+        if (!studentId) { alert('學生學號不得為空！'); return; }
         if (recordedLapTimes.length === 0) { alert('尚無任何完成的圈速紀錄可上傳！'); return; }
 
         try {
-            // 將每圈的圈速逐筆或打包上傳
             for (let item of recordedLapTimes) {
                 const { error } = await supabaseClient
                     .from('fitness_records')
                     .insert([{ 
                         student_id: studentId, 
                         category: `running_lap_${item.lap}`, 
-                        score_value: item.duration // 儲存秒數作為成績
+                        score_value: item.duration 
                     }]);
                 if (error) throw error;
             }
