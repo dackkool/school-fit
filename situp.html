@@ -175,7 +175,7 @@
         
         .input-group { margin-bottom: 6px; }
         .input-group label { font-size: 0.85rem; color: #444; font-weight: bold; display: block; margin-bottom: 3px; }
-        .input-group input {
+        .input-group input, .input-group select {
             width: 100%;
             padding: 8px 10px;
             font-size: 1rem;
@@ -360,6 +360,14 @@
                 <input type="text" id="student-id" placeholder="例如: S001">
             </div>
 
+            <!-- 新增：鏡頭選擇下拉選單 -->
+            <div class="input-group">
+                <label>選擇相機鏡頭：</label>
+                <select id="camera-select">
+                    <option value="">正在偵測可用鏡頭...</option>
+                </select>
+            </div>
+
             <div class="tips-box">
                 💡 <b>要點：</b>雙腳曲膝（固定腳背）、手交叉放胸前、起坐時手肘觸及大腿。
             </div>
@@ -408,8 +416,8 @@
 
 <script>
     // --- 1. 請填入你自己的 Supabase 資料 ---
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // --- 2. 檢查 student_id 要跟 login 一樣 ---
@@ -430,6 +438,9 @@
             studentIdInput.value = activeStudentId;
             studentIdInput.disabled = true;
         }
+
+        // 初始化並偵測可用鏡頭
+        initCameras();
     });
 
     const videoElement = document.getElementsByClassName('input_video')[0];
@@ -446,14 +457,89 @@
     const bodyStatusBadge = document.getElementById('body-status-badge');
     const appContainer = document.getElementById('app-container');
     const readyCountdownOverlay = document.getElementById('ready-countdown-overlay');
+    const cameraSelect = document.getElementById('camera-select');
 
     let situpCounter = 0;
     let stage = 'down';
     let isRunning = false;
     let isCountdownActive = false; // 是否正在進行 3 秒倒數
-    let fullBodyTimer = null;     // 連續 3 秒計時器
+    let fullBodyTimer = null;      // 連續 3 秒計時器
     let timeLeft = 60;
     let countdownInterval;
+    let currentStream = null;
+    let cameraAnimationId = null;
+
+    // 自動偵測可用鏡頭並填入下拉選單
+    async function initCameras() {
+        try {
+            // 先請求一次相機權限以確保能讀取裝置名稱
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            tempStream.getTracks().forEach(track => track.stop());
+
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+            cameraSelect.innerHTML = '';
+            if (videoDevices.length === 0) {
+                cameraSelect.innerHTML = '<option value="">找不到可用鏡頭</option>';
+                return;
+            }
+
+            videoDevices.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `鏡頭 ${index + 1}`;
+                cameraSelect.appendChild(option);
+            });
+
+            // 預設啟動第一個鏡頭
+            startSelectedCamera(videoDevices[0].deviceId);
+
+            // 監聽下拉選單變更事件
+            cameraSelect.addEventListener('change', (e) => {
+                startSelectedCamera(e.target.value);
+            });
+
+        } catch (err) {
+            console.error('無法取得相機列表:', err);
+            cameraSelect.innerHTML = '<option value="">無法存取相機權限</option>';
+            // Fallback 啟動預設相機
+            startSelectedCamera(null);
+        }
+    }
+
+    // 啟動指定的鏡頭裝置
+    async function startSelectedCamera(deviceId) {
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+        if (cameraAnimationId) {
+            cancelAnimationFrame(cameraAnimationId);
+        }
+
+        const constraints = {
+            video: deviceId ? { deviceId: { exact: deviceId } } : { width: 640, height: 480 }
+        };
+
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            videoElement.srcObject = currentStream;
+            await videoElement.play();
+
+            // 啟動影格處理迴圈
+            async function renderFrame() {
+                if (videoElement.readyState >= 2) {
+                    await pose.send({ image: videoElement });
+                }
+                cameraAnimationId = requestAnimationFrame(renderFrame);
+            }
+            renderFrame();
+
+        } catch (err) {
+            console.error('啟動選定鏡頭失敗:', err);
+            alert('切換鏡頭失敗，請檢查相機權限或裝置是否被佔用。');
+        }
+    }
 
     function switchTab(tabName) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -594,12 +680,6 @@
     const pose = new Pose({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
     pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     pose.onResults(onResults);
-
-    const camera = new Camera(videoElement, {
-        onFrame: async () => { await pose.send({image: videoElement}); },
-        width: 640, height: 480
-    });
-    camera.start();
 
     // 連續偵測到全身 3 秒後觸發倒數
     function startAutoCountdownTimer() {
