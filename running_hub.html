@@ -22,14 +22,12 @@
         .tab-content { display: none; flex-direction: column; }
         .tab-content.active { display: flex; }
 
-        /* 動態 2~8 個分站狀態看板 */
         .status-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 15px; }
         .status-card { background: #f5f5f5; border: 2px solid #ddd; border-radius: 12px; padding: 10px; text-align: center; }
         .status-card.online { background: #e8f5e9; border-color: #4caf50; color: #2e7d32; }
         .status-title { font-size: 0.75rem; font-weight: bold; }
         .status-indicator { font-size: 0.9rem; margin-top: 4px; font-weight: bold; }
 
-        /* QR Code 區域 (支援多網格排列) */
         .qr-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 10px; max-height: 400px; overflow-y: auto; padding: 5px; }
         .qr-box { background: #fafafa; border: 1.5px dashed #1565c0; border-radius: 12px; padding: 10px; text-align: center; }
         .qr-box img { width: 120px; height: 120px; margin: 5px auto; display: block; }
@@ -52,12 +50,9 @@
 
 <div id="main-card">
     <h1>校園智慧跑圈統籌主機 (Main Hub)</h1>
-    <div class="subtitle">連線監控・動態 QR Code (2~8站)・學生人臉樣貌登記與成績統籌</div>
+    <div class="subtitle">多站順序過點驗證・圈速精準計時・Supabase 成績上傳</div>
 
-    <!-- 动态分站連線狀態看板 (2-8個) -->
-    <div class="status-grid" id="status-grid-container">
-        <!-- 由 JS 動態生成狀態看板 -->
-    </div>
+    <div class="status-grid" id="status-grid-container"></div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('monitor')">⚡ 即時成績統籌</button>
@@ -73,24 +68,24 @@
                 <input type="text" id="active-student-id" placeholder="載入中..." style="padding: 6px; width: 100%; border-radius: 6px; border: 1px solid #ccc;">
             </div>
             <div>
-                <button class="btn-primary" onclick="resetActiveStudent()" style="padding: 8px 16px; margin-top: 18px;">重設計圈</button>
+                <button class="btn-primary" onclick="resetActiveStudent()" style="padding: 8px 16px; margin-top: 18px;">重新計時</button>
             </div>
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <strong>📡 各分站即時過點日誌：</strong>
+            <strong>📡 順序過點與各圈圈速日誌：</strong>
             <span id="live-lap-counter" style="color: #1565c0; font-weight: bold; font-size: 1.1rem;">完成圈數: 0 圈</span>
         </div>
         <div id="live-log">
-            <div style="text-align: center; color: #888; padding: 20px;">等待各分站傳送數據中...</div>
+            <div style="text-align: center; color: #888; padding: 20px;">請由 CP1 出發，依序通過所有檢查點...</div>
         </div>
-        <button class="btn-primary" onclick="uploadFinalScore()" style="background-color: #2e7d32;">💾 結算並上傳成績至 Supabase</button>
+        <button class="btn-primary" onclick="uploadLapScores()" style="background-color: #2e7d32;">💾 上傳所有圈速成績至 Supabase</button>
     </div>
 
-    <!-- TAB 2: 生成分機 QR Code (支援 2 至 8 個) -->
+    <!-- TAB 2: 生成分機 QR Code -->
     <div id="tab-qr" class="tab-content" style="display: none;">
         <div class="input-group">
-            <label>選擇分站數量 (2 至 8 個)：</label>
+            <label>選擇總分站數量 (2 至 8 個)：</label>
             <select id="cp-count-select" onchange="generateQRCodes(); updateStatusGrid();">
                 <option value="2">2 個檢查點 (CP1, CP2)</option>
                 <option value="3">3 個檢查點 (CP1, CP2, CP3)</option>
@@ -123,14 +118,18 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
     let trackpointHeartbeats = {};
     let currentLapCount = 0;
-    let isModelsLoaded = false;
+    
+    // 嚴格順序追蹤變數
+    let expectedNextCp = 1; // 預期下一個要通過的檢查點 (從 1 開始)
+    let lapStartTime = null; // 當前圈的起跑時間
+    let recordedLapTimes = []; // 儲存每圈的秒數紀錄
 
     window.addEventListener('DOMContentLoaded', async () => {
         const loggedStudentId = sessionStorage.getItem('current_student_id');
@@ -143,7 +142,6 @@
         generateQRCodes();
         initHubRealtime();
         setInterval(checkTrackpointHealth, 2000);
-        
         loadFaceModels();
     });
 
@@ -153,13 +151,11 @@
             await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
             await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
             await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
-            isModelsLoaded = true;
-            document.getElementById('model-status').innerText = '✅ AI 模型載入成功！請點擊開始相機。';
+            document.getElementById('model-status').innerText = '✅ AI 模型載入成功！';
             document.getElementById('model-status').style.color = '#4caf50';
             document.getElementById('capture-btn').disabled = false;
         } catch (err) {
             document.getElementById('model-status').innerText = '❌ 模型載入失敗，請檢查 /models 資料夾。';
-            console.error(err);
         }
     }
 
@@ -183,49 +179,27 @@
         try {
             regStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
             video.srcObject = regStream;
-        } catch (e) {
-            alert('無法開啟相機進行樣貌擷取');
-        }
+        } catch (e) { alert('無法開啟相機'); }
     }
 
     function stopRegistrationCamera() {
-        if (regStream) {
-            regStream.getTracks().forEach(track => track.stop());
-            regStream = null;
-        }
+        if (regStream) { regStream.getTracks().forEach(t => t.stop()); regStream = null; }
     }
 
     async function captureAndRegisterFace() {
         const studentId = document.getElementById('reg-id').value.trim();
         const name = document.getElementById('reg-name').value.trim();
-        if (!studentId || !name) { alert('請填寫完整學號與姓名！'); return; }
+        if (!studentId || !name) { alert('請填寫完整資訊！'); return; }
 
         const video = document.getElementById('reg-video');
-        document.getElementById('capture-btn').innerText = '⏳ 正在擷取樣貌分析中...';
-
         const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
-
-        if (!detection) {
-            alert('❌ 未偵測到清晰人臉，請保持光線充足！');
-            document.getElementById('capture-btn').innerText = '📷 正對鏡頭：擷取樣貌並儲存特徵';
-            return;
-        }
-
-        const descriptorArray = Array.from(detection.descriptor);
+        if (!detection) { alert('❌ 未偵測到清晰人臉！'); return; }
 
         try {
-            const { error } = await supabaseClient
-                .from('students_db')
-                .update({ face_encoding: JSON.stringify(descriptorArray) })
-                .eq('student_id', studentId);
-
+            const { error } = await supabaseClient.from('students_db').update({ face_encoding: JSON.stringify(Array.from(detection.descriptor)) }).eq('student_id', studentId);
             if (error) throw error;
-            alert(`🎉 學號 [${studentId}] 人臉樣貌特徵已成功登記至雲端！`);
-        } catch (err) {
-            alert(`登記失敗: ${err.message}`);
-        } finally {
-            document.getElementById('capture-btn').innerText = '📷 正對鏡頭：擷取樣貌並儲存特徵';
-        }
+            alert(`🎉 學號 [${studentId}] 人臉樣貌登記成功！`);
+        } catch (err) { alert(`登記失敗: ${err.message}`); }
     }
 
     function initHubRealtime() {
@@ -236,7 +210,6 @@
             .subscribe();
     }
 
-    // 動態更新 2~8 個分站的狀態看板
     function updateStatusGrid() {
         const count = parseInt(document.getElementById('cp-count-select').value);
         const grid = document.getElementById('status-grid-container');
@@ -247,10 +220,7 @@
             const card = document.createElement('div');
             card.className = 'status-card';
             card.id = `cp${i}-status`;
-            card.innerHTML = `
-                <div class="status-title">${i === 1 ? '檢查點 1 (起終點)' : `檢查點 ${i}`}</div>
-                <div class="status-indicator">離線</div>
-            `;
+            card.innerHTML = `<div class="status-title">${i === 1 ? '檢查點 1 (起終點)' : `檢查點 ${i}`}</div><div class="status-indicator">離線</div>`;
             grid.appendChild(card);
         }
     }
@@ -272,32 +242,85 @@
         }
     }
 
+    // 🚀 嚴格順序過點驗證邏輯
     function handleTrackpointTrigger(studentId, cpId, timestamp) {
-        const timeStr = new Date(timestamp).toLocaleTimeString('zh-HK');
+        const totalCps = parseInt(document.getElementById('cp-count-select').value);
         const logBox = document.getElementById('live-log');
-        if (logBox.innerHTML.includes('等待各分站')) logBox.innerHTML = '';
-        if (cpId === 1) { currentLapCount++; document.getElementById('live-lap-counter').innerText = `完成圈數: ${currentLapCount} 圈`; }
-        logBox.innerHTML = `<div class="log-item"><span>學生 [<b>${studentId}</b>] 通過 <b>檢查點 ${cpId}</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
-        speak(`檢查點 ${cpId} 通過`);
+        const timeStr = new Date(timestamp).toLocaleTimeString('zh-HK');
+
+        if (logBox.innerHTML.includes('請由 CP1')) logBox.innerHTML = '';
+
+        // 檢查是否為當前預期通過的站點
+        if (cpId === expectedNextCp) {
+            if (cpId === 1) {
+                // 如果是起點/第一站
+                if (lapStartTime === null) {
+                    // 第一次出發，開始計時
+                    lapStartTime = timestamp;
+                    logBox.innerHTML = `<div class="log-item"><span>🚀 學生 [<b>${studentId}</b>] 從 <b>檢查點 1</b> 出發起跑！</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
+                    speak('開始起跑');
+                } else {
+                    // 已經跑過一圈並回到 CP1，代表完成完整一圈！
+                    const lapDurationSec = ((timestamp - lapStartTime) / 1000).toFixed(2);
+                    currentLapCount++;
+                    recordedLapTimes.push({ lap: currentLapCount, duration: parseFloat(lapDurationSec) });
+
+                    document.getElementById('live-lap-counter').innerText = `完成圈數: ${currentLapCount} 圈`;
+                    logBox.innerHTML = `<div class="log-item" style="background: #e8f5e9;"><span>🏆 <b>完成第 ${currentLapCount} 圈！</b> 圈速: <b>${lapDurationSec} 秒</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
+                    speak(`完成第 ${currentLapCount} 圈，圈速 ${Math.floor(lapDurationSec)} 秒`);
+
+                    // 重設下一圈計時起點
+                    lapStartTime = timestamp;
+                }
+            } else {
+                // 通過中途檢查點 (CP2, CP3...)
+                logBox.innerHTML = `<div class="log-item"><span>學生 [<b>${studentId}</b>] 通過 <b>檢查點 ${cpId}</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
+                speak(`檢查點 ${cpId} 通過`);
+            }
+
+            // 更新下一個預期通過的檢查點 (若到最後一站，下一個循環回到 CP1)
+            expectedNextCp = (cpId % totalCps) + 1;
+
+        } else {
+            // ❌ 順序錯誤（例如漏站或逆向）
+            logBox.innerHTML = `<div class="log-item" style="color: #d32f2f;"><span>⚠️ 順序錯誤：預期應通過 CP${expectedNextCp}，卻收到 CP${cpId}</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
+        }
     }
 
     function resetActiveStudent() {
         currentLapCount = 0;
+        expectedNextCp = 1;
+        lapStartTime = null;
+        recordedLapTimes = [];
         document.getElementById('live-lap-counter').innerText = `完成圈數: 0 圈`;
-        document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">已重設，等待分站過點...</div>`;
+        document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">已重新計時，請由 CP1 出發...</div>`;
     }
 
-    async function uploadFinalScore() {
+    // 💾 將每一圈的「圈速」上傳至 Supabase
+    async function uploadLapScores() {
         const studentId = document.getElementById('active-student-id').value.trim();
-        if (!studentId) { alert('請先輸入當前測驗的學生學號！'); return; }
+        if (!studentId) { alert('請先輸入學生學號！'); return; }
+        if (recordedLapTimes.length === 0) { alert('尚無任何完成的圈速紀錄可上傳！'); return; }
+
         try {
-            const { error } = await supabaseClient.from('fitness_records').insert([{ student_id: studentId, category: 'running', score_value: currentLapCount }]);
-            if (error) throw error;
-            alert(`🎉 成功上傳學號 ${studentId} 的跑圈成績：${currentLapCount} 圈！`);
-        } catch (err) { alert(`上傳失敗: ${err.message}`); }
+            // 將每圈的圈速逐筆或打包上傳
+            for (let item of recordedLapTimes) {
+                const { error } = await supabaseClient
+                    .from('fitness_records')
+                    .insert([{ 
+                        student_id: studentId, 
+                        category: `running_lap_${item.lap}`, 
+                        score_value: item.duration // 儲存秒數作為成績
+                    }]);
+                if (error) throw error;
+            }
+
+            alert(`🎉 成功上傳學號 ${studentId} 的 ${recordedLapTimes.length} 筆圈速成績至 Supabase！`);
+        } catch (err) {
+            alert(`上傳失敗: ${err.message}`);
+        }
     }
 
-    // 🚀 生成包含完整網址與參數 (?role=cpX) 的 QR Code，手機一掃即可自動打開網頁
     function generateQRCodes() {
         const count = parseInt(document.getElementById('cp-count-select').value);
         const container = document.getElementById('qr-container');
