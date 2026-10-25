@@ -35,7 +35,6 @@
         #live-log { background: #fafafa; border: 1px solid #ddd; border-radius: 10px; height: 200px; overflow-y: auto; padding: 10px; font-size: 0.9rem; margin-bottom: 10px; }
         .log-item { padding: 6px 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
 
-        /* 歷史成績與建議面板 */
         .history-container { background: #fafafa; border: 1px solid #ddd; border-radius: 12px; padding: 15px; max-height: 350px; overflow-y: auto; }
         .analysis-card { background: #e3f2fd; border-left: 5px solid #1565c0; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem; color: #0d47a1; }
         table.history-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
@@ -66,7 +65,7 @@
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('monitor')">⚡ 即時成績統籌</button>
         <button class="tab-btn" onclick="switchTab('qr')">📱 生成分機 QR</button>
-        <button class="tab-btn" onclick="switchTab('history')" onclick="loadStudentHistory()">📈 往績分析與建議</button>
+        <button class="tab-btn" onclick="switchTab('history')">📈 往績分析與建議</button>
         <button class="tab-btn" onclick="switchTab('students')">👤 人臉樣貌登記</button>
     </div>
 
@@ -112,7 +111,7 @@
     <!-- TAB 3: 往績分析與建議 -->
     <div id="tab-history" class="tab-content" style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <strong>📊 個人跑圈歷史與趨勢分析</strong>
+            <strong>📊 個人跑圈歷史與趨勢分析 (由新至舊)</strong>
             <button class="btn-primary" onclick="loadStudentHistory()" style="width: auto; padding: 6px 14px; font-size: 0.85rem; margin: 0;">🔄 重新載入數據</button>
         </div>
         <div class="history-container">
@@ -121,7 +120,6 @@
                 <table class="history-table">
                     <thead>
                         <tr>
-                            <th>記錄 ID</th>
                             <th>學生學號</th>
                             <th>項目類別</th>
                             <th>圈速 / 成績 (秒)</th>
@@ -129,7 +127,7 @@
                         </tr>
                     </thead>
                     <tbody id="history-tbody">
-                        <tr><td colspan="5" style="color: #888; padding: 20px;">載入中...</td></tr>
+                        <tr><td colspan="4" style="color: #888; padding: 20px;">載入中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -155,8 +153,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
@@ -217,14 +215,14 @@
         if (tabName === 'history') loadStudentHistory();
     }
 
-    // 📈 載入歷史成績並生成分析與建議
+    // 📈 載入歷史成績 (依時間由新至舊排列，移除 ID 欄位)
     async function loadStudentHistory() {
         const studentId = document.getElementById('active-student-id').value.trim();
         const tbody = document.getElementById('history-tbody');
         const adviceBox = document.getElementById('analysis-advice');
 
         if (!studentId) {
-            tbody.innerHTML = `<tr><td colspan="5">尚未指定學生學號</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="4">尚未指定學生學號</td></tr>`;
             adviceBox.innerHTML = `💡 <b>提示：</b> 請先確認已登入學生帳號。`;
             return;
         }
@@ -237,25 +235,23 @@
                 .select('*')
                 .eq('student_id', studentId)
                 .eq('category', 'running')
-                .order('created_at', { ascending: false });
+                .order('created_at', { ascending: false }); // 依時間由新至舊排列
 
             if (error) throw error;
 
             if (!data || data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" style="color: #888; padding: 20px;">尚無跑圈記錄</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" style="color: #888; padding: 20px;">尚無跑圈記錄</td></tr>`;
                 adviceBox.innerHTML = `💡 <b>表現分析與建議：</b> 目前尚無您的跑圈記錄。建議完成測驗並點擊「上傳所有圈速成績」來累積數據，以獲取專屬體能評估！`;
                 return;
             }
 
-            // 填充表格
             tbody.innerHTML = '';
             let totalScore = 0;
-            data.forEach((row, index) => {
+            data.forEach((row) => {
                 totalScore += row.score_value;
                 const timeStr = new Date(row.created_at).toLocaleString('zh-HK');
                 tbody.innerHTML += `
                     <tr>
-                        <td>${row.id || index + 1}</td>
                         <td>${row.student_id}</td>
                         <td><span style="background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 4px; font-weight: bold;">running</span></td>
                         <td><b>${row.score_value}</b> 秒</td>
@@ -264,7 +260,6 @@
                 `;
             });
 
-            // 計算平均圈速並提供建議
             const avgSpeed = (totalScore / data.length).toFixed(2);
             let adviceHtml = `🎯 <b>體能表現分析摘要：</b> 您總共完成了 <b>${data.length}</b> 次跑圈記錄。<br>`;
             adviceHtml += `⚡ 平均每圈圈速為：<b>${avgSpeed} 秒</b>。<br>`;
@@ -280,7 +275,7 @@
             adviceBox.innerHTML = adviceHtml;
 
         } catch (err) {
-            tbody.innerHTML = `<tr><td colspan="5" style="color: #d32f2f;">載入失敗: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="4" style="color: #d32f2f;">載入失敗: ${err.message}</td></tr>`;
             adviceBox.innerHTML = `❌ 無法讀取歷史數據，請檢查資料庫連線。`;
         }
     }
@@ -398,7 +393,6 @@
         document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">已重新計時，請由 CP1 出發...</div>`;
     }
 
-    // 💾 將圈速上傳至 Supabase（category 固定為 "running"）
     async function uploadLapScores() {
         const studentId = document.getElementById('active-student-id').value.trim();
         if (!studentId) { alert('學生學號不得為空！'); return; }
@@ -410,14 +404,14 @@
                     .from('fitness_records')
                     .insert([{ 
                         student_id: studentId, 
-                        category: 'running', // 類別統一為 running
-                        score_value: item.duration // 秒數
+                        category: 'running', 
+                        score_value: item.duration 
                     }]);
                 if (error) throw error;
             }
 
             alert(`🎉 成功上傳學號 ${studentId} 的 ${recordedLapTimes.length} 筆圈速成績至 Supabase！`);
-            loadStudentHistory(); // 上傳後自動重新整理歷史與分析
+            loadStudentHistory(); 
         } catch (err) {
             alert(`上傳失敗: ${err.message}`);
         }
