@@ -14,9 +14,9 @@
         body { margin: 0; padding: 10px; background-color: #111; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
         #container { width: 100%; max-width: 500px; text-align: center; }
         #badge { background-color: #ff9800; padding: 8px 16px; border-radius: 20px; font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; display: inline-block; }
-        .video-wrapper { position: relative; width: 100%; max-height: 55vh; border-radius: 16px; overflow: hidden; border: 3px solid #ff9800; }
-        video { width: 100%; height: 100%; object-fit: cover; }
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .video-wrapper { position: relative; width: 100%; max-height: 55vh; border-radius: 16px; overflow: hidden; border: 3px solid #ff9800; background: #000; }
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); /* 前置鏡頭水平翻轉，鏡像顯示較自然 */ }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); /* 同步翻轉 Canvas 標框 */ }
         #status-text { margin-top: 15px; font-size: 0.95rem; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; }
     </style>
 </head>
@@ -32,8 +32,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
@@ -48,11 +48,10 @@
 
         initTrackpointRealtime();
         await loadModelsAndStudentFaceDB();
-        startCamera();
+        startFrontCamera(); // 呼叫前置鏡頭
     });
 
     async function loadModelsAndStudentFaceDB() {
-        // 🚀 指向專案內置的 models 資料夾
         const MODEL_URL = './models';
         try {
             await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
@@ -83,7 +82,7 @@
 
             if (labeledDescriptors.length > 0) {
                 faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
-                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！相機就緒中...`;
+                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！前置相機就緒，請看鏡頭...`;
             }
         } catch (err) {
             console.error(err);
@@ -106,14 +105,23 @@
         });
     }
 
-    async function startCamera() {
+    // 🚀 使用前置鏡頭 (User / Selfie)
+    async function startFrontCamera() {
         const video = document.getElementById('cam-video');
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: "user", // 指定使用前置鏡頭
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                } 
+            });
+
             video.srcObject = stream;
             video.addEventListener('play', onVideoPlay);
         } catch (err) {
-            alert('無法存取相機！');
+            alert('無法存取前置相機，請檢查瀏覽器相機權限！');
+            console.error(err);
         }
     }
 
