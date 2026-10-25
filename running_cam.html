@@ -3,10 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>跑圈分站感應相機 | Trackpoint</title>
-    <!-- MediaPipe 庫 (使用 Face Detection 偵測人臉過點) -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <title>智慧跑圈統籌主機 | Main Hub</title>
     <!-- Supabase JS 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
@@ -14,74 +11,196 @@
         * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
         body {
             margin: 0;
-            padding: 10px;
-            background-color: #111;
-            color: white;
+            padding: 15px;
+            background-color: #e3f2fd;
             display: flex;
-            flex-direction: column;
-            align-items: center;
             justify-content: center;
+            align-items: center;
             min-height: 100vh;
         }
 
-        #container {
+        #main-card {
             width: 100%;
-            max-width: 500px;
+            max-width: 850px;
+            background-color: white;
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            padding: 20px;
+        }
+
+        h1 { color: #1565c0; font-size: 1.5rem; margin: 0 0 5px 0; text-align: center; }
+        .subtitle { font-size: 0.8rem; color: #666; margin-bottom: 15px; text-align: center; }
+
+        /* 分頁標籤 */
+        .tab-header {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 15px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            background: none;
+            border: none;
+            font-size: 0.95rem;
+            font-weight: bold;
+            color: #888;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .tab-btn.active {
+            color: #1565c0;
+            border-bottom: 3.5px solid #1565c0;
+        }
+
+        .tab-content { display: none; flex-direction: column; }
+        .tab-content.active { display: flex; }
+
+        /* 狀態看板 */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .status-card {
+            background: #f5f5f5;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            padding: 10px;
             text-align: center;
         }
+        .status-card.online { background: #e8f5e9; border-color: #4caf50; color: #2e7d32; }
+        .status-title { font-size: 0.75rem; font-weight: bold; }
+        .status-indicator { font-size: 0.9rem; margin-top: 4px; font-weight: bold; }
 
-        #badge {
-            background-color: #ff9800;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 1.1rem;
-            font-weight: bold;
-            margin-bottom: 10px;
-            display: inline-block;
+        /* QR Code 區域 */
+        .qr-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 10px;
         }
-
-        video { display: none; }
-        canvas {
-            width: 100%;
-            max-height: 60vh;
-            border-radius: 16px;
-            border: 3px solid #ff9800;
-            object-fit: cover;
-        }
-
-        #status-text {
-            margin-top: 15px;
-            font-size: 1rem;
-            background: rgba(255,255,255,0.1);
+        .qr-box {
+            background: #fafafa;
+            border: 1px dashed #1565c0;
+            border-radius: 12px;
             padding: 10px;
-            border-radius: 8px;
+            text-align: center;
+        }
+        .qr-box img { width: 140px; height: 140px; margin: 5px auto; display: block; }
+
+        #live-log {
+            background: #fafafa;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            height: 220px;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+        .log-item {
+            padding: 6px 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
         }
 
-        .trigger-btn {
-            background-color: #4caf50;
-            color: white;
-            border: none;
-            padding: 12px;
-            font-size: 1.1rem;
-            border-radius: 25px;
+        .input-group { margin-bottom: 10px; }
+        .input-group label { font-size: 0.85rem; color: #444; font-weight: bold; display: block; margin-bottom: 4px; }
+        .input-group input, .input-group select {
             width: 100%;
-            margin-top: 15px;
-            font-weight: bold;
-            cursor: pointer;
+            padding: 8px 10px;
+            font-size: 0.95rem;
+            border-radius: 8px;
+            border: 1.5px solid #ccc;
         }
+
+        button.btn-primary {
+            width: 100%;
+            padding: 10px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            background-color: #1565c0;
+            margin-top: 5px;
+        }
+        button.btn-primary:hover { opacity: 0.9; }
     </style>
 </head>
 <body>
 
-<div id="container">
-    <div id="badge">📷 正在載入分站身分...</div>
-    <div>
-        <video class="input_video" playsinline></video>
-        <canvas class="output_canvas"></canvas>
+<div id="main-card">
+    <h1>校園智慧跑圈統籌主機 (Main Hub)</h1>
+    <div class="subtitle">無須相機・專注監控連線、QR Code 分發與即時成績統籌</div>
+
+    <!-- 4 個分站即時連線狀態看板 -->
+    <div class="status-grid">
+        <div class="status-card" id="cp1-status"><div class="status-title">檢查點 1 (起終點)</div><div class="status-indicator">離線</div></div>
+        <div class="status-card" id="cp2-status"><div class="status-title">檢查點 2</div><div class="status-indicator">離線</div></div>
+        <div class="status-card" id="cp3-status"><div class="status-title">檢查點 3</div><div class="status-indicator">離線</div></div>
+        <div class="status-card" id="cp4-status"><div class="status-title">檢查點 4</div><div class="status-indicator">離線</div></div>
     </div>
-    <div id="status-text">正在連線至主機頻道...</div>
-    <!-- 備用按鈕：若現場環境光線不足無法自動偵測人臉，工作人員可手動點擊觸發 -->
-    <button class="trigger-btn" onclick="manualTrigger()">⚡ 手動模擬學生過點</button>
+
+    <!-- 分頁選單 -->
+    <div class="tab-header">
+        <button class="tab-btn active" onclick="switchTab('monitor')">⚡ 即時成績統籌</button>
+        <button class="tab-btn" onclick="switchTab('qr')">📱 生成分機 QR</button>
+        <button class="tab-btn" onclick="switchTab('students')">👤 學生名冊管理</button>
+    </div>
+
+    <!-- TAB 1: 即時成績統籌 -->
+    <div id="tab-monitor" class="tab-content active">
+        <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+            <div style="flex: 1;">
+                <label style="font-size: 0.85rem; font-weight: bold;">當前測驗學生學號 (已自動帶入)：</label>
+                <input type="text" id="active-student-id" placeholder="載入中..." style="padding: 6px; width: 100%; border-radius: 6px; border: 1px solid #ccc;">
+            </div>
+            <div>
+                <button class="btn-primary" onclick="resetActiveStudent()" style="padding: 8px 16px; margin-top: 18px;">重設計圈</button>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <strong>📡 各分站即時過點日誌：</strong>
+            <span id="live-lap-counter" style="color: #1565c0; font-weight: bold; font-size: 1.1rem;">完成圈數: 0 圈</span>
+        </div>
+        <div id="live-log">
+            <div style="text-align: center; color: #888; padding: 20px;">等待各分站傳送數據中...</div>
+        </div>
+        <button class="btn-primary" onclick="uploadFinalScore()" style="background-color: #2e7d32;">💾 結算並上傳成績至 Supabase</button>
+    </div>
+
+    <!-- TAB 2: 生成分機 QR Code -->
+    <div id="tab-qr" class="tab-content" style="display: none;">
+        <div class="input-group">
+            <label>選擇分站數量：</label>
+            <select id="cp-count-select" onchange="generateQRCodes()">
+                <option value="3">3 個檢查點 (CP1, CP2, CP3)</option>
+                <option value="4" selected>4 個檢查點 (CP1, CP2, CP3, CP4)</option>
+            </select>
+        </div>
+        <div class="qr-grid" id="qr-container">
+            <!-- 動態生成 QR Code -->
+        </div>
+    </div>
+
+    <!-- TAB 3: 學生名冊管理 -->
+    <div id="tab-students" class="tab-content" style="display: none;">
+        <div class="input-group">
+            <label>學生姓名：</label>
+            <input type="text" id="reg-name" placeholder="例如: 陳小明">
+        </div>
+        <div class="input-group">
+            <label>學生學號：</label>
+            <input type="text" id="reg-id" placeholder="例如: S001">
+        </div>
+        <button class="btn-primary" onclick="registerStudent()">新增學生至資料庫</button>
+    </div>
 </div>
 
 <script>
@@ -90,102 +209,166 @@
     const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    let role = 'cp1'; // 預設檢查點
     let supabaseChannel = null;
-    let lastSendTime = 0;
+    let trackpointHeartbeats = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    let currentLapCount = 0;
 
     window.addEventListener('DOMContentLoaded', () => {
-        const urlParams = new URLSearchParams(window.location.search);
-        role = urlParams.get('role') || 'cp1';
+        // 從 sessionStorage 自動帶入已登入學號
+        const loggedStudentId = sessionStorage.getItem('current_student_id');
+        if (loggedStudentId) {
+            document.getElementById('active-student-id').value = loggedStudentId;
+        } else {
+            // 若網址帶有 student_id 參數也支援
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlId = urlParams.get('student_id');
+            if (urlId) document.getElementById('active-student-id').value = urlId;
+        }
 
-        const badge = document.getElementById('badge');
-        badge.innerText = `📡 當前分站：${role.toUpperCase()}`;
-        if (role === 'cp1') badge.style.backgroundColor = '#4caf50';
-        else if (role === 'cp2') badge.style.backgroundColor = '#2196f3';
-        else if (role === 'cp3') badge.style.backgroundColor = '#9c27b0';
-        else badge.style.backgroundColor = '#e91e63';
-
-        initTrackpointRealtime();
-        startCamera();
+        generateQRCodes();
+        initHubRealtime();
+        setInterval(checkTrackpointHealth, 2000);
     });
 
-    // 初始化 Realtime 頻道與心跳廣播 (每 3 秒發送一次心跳讓主機知道線上)
-    function initTrackpointRealtime() {
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => {
+            c.classList.remove('active');
+            c.style.display = 'none'; // 確保隱藏
+        });
+
+        const tabs = { 'monitor': 0, 'qr': 1, 'students': 2 };
+        document.querySelectorAll('.tab-btn')[tabs[tabName]].classList.add('active');
+        const target = document.getElementById(`tab-${tabName}`);
+        target.classList.add('active');
+        target.style.display = 'flex'; // 確保正確顯示為 flex
+    }
+
+    function initHubRealtime() {
         supabaseChannel = supabaseClient.channel('school_running_room', {
             config: { broadcast: { self: true } }
         });
 
-        supabaseChannel.subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-                document.getElementById('status-text').innerText = `✅ 已連線！相機隨時可感應學生過點。`;
-                setInterval(() => {
-                    supabaseChannel.send({
-                        type: 'broadcast',
-                        event: 'heartbeat',
-                        payload: { checkpoint_id: parseInt(role.replace('cp', '')) }
-                    });
-                }, 3000);
-            }
-        });
+        supabaseChannel
+            .on('broadcast', { event: 'heartbeat' }, payload => {
+                const cpId = payload.payload.checkpoint_id;
+                trackpointHeartbeats[cpId] = Date.now();
+            })
+            .on('broadcast', { event: 'checkpoint_trigger' }, payload => {
+                const data = payload.payload;
+                handleTrackpointTrigger(data.student_id, data.checkpoint_id, data.timestamp);
+            })
+            .subscribe();
     }
 
-    // 發送過點訊號給 Main Hub
-    function sendTriggerToHub() {
+    function checkTrackpointHealth() {
         const now = Date.now();
-        if (now - lastSendTime < 3500) return; // 冷卻時間 3.5 秒
-        lastSendTime = now;
+        const maxCp = parseInt(document.getElementById('cp-count-select').value);
 
-        const cpId = parseInt(role.replace('cp', ''));
-        const studentId = "S001"; // 可對應當前辨識到的學生學號
+        for (let i = 1; i <= 4; i++) {
+            const card = document.getElementById(`cp${i}-status`);
+            const indicator = card.querySelector('.status-indicator');
+            if (i > maxCp) {
+                card.style.display = 'none';
+                continue;
+            }
+            card.style.display = 'block';
 
-        supabaseChannel.send({
-            type: 'broadcast',
-            event: 'checkpoint_trigger',
-            payload: { student_id: studentId, checkpoint_id: cpId, timestamp: now }
-        });
-
-        document.getElementById('status-text').innerText = `🚀 已成功發送 [${role.toUpperCase()}] 過點訊號！`;
-        setTimeout(() => {
-            document.getElementById('status-text').innerText = `✅ 運行中：隨時準備偵測下一位學生。`;
-        }, 2000);
-    }
-
-    function manualTrigger() {
-        sendTriggerToHub();
-    }
-
-    // 啟動 MediaPipe 相機與輕量人臉偵測
-    const videoElement = document.getElementsByClassName('input_video')[0];
-    const canvasElement = document.getElementsByClassName('output_canvas')[0];
-    const canvasCtx = canvasElement.getContext('2d');
-
-    function onResults(results) {
-        canvasElement.width = videoElement.videoWidth || 480;
-        canvasElement.height = videoElement.videoHeight || 640;
-
-        canvasCtx.save();
-        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-        if (results.detections && results.detections.length > 0) {
-            // 當偵測到有人臉靠近鏡頭時，自動觸發過點
-            const now = Date.now();
-            if (now - lastSendTime > 4000) {
-                sendTriggerToHub();
+            if (now - trackpointHeartbeats[i] < 6000) {
+                card.classList.add('online');
+                indicator.innerText = '🟢 連線中';
+            } else {
+                card.classList.remove('online');
+                indicator.innerText = '🔴 離線';
             }
         }
-        canvasCtx.restore();
     }
 
-    const faceDetection = new FaceDetection({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`});
-    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.6 });
-    faceDetection.onResults(onResults);
+    function handleTrackpointTrigger(studentId, cpId, timestamp) {
+        const timeStr = new Date(timestamp).toLocaleTimeString('zh-HK');
+        const logBox = document.getElementById('live-log');
+        
+        if (logBox.innerHTML.includes('等待各分站')) logBox.innerHTML = '';
 
-    const camera = new Camera(videoElement, {
-        onFrame: async () => { await faceDetection.send({image: videoElement}); },
-        width: 480, height: 640
-    });
-    camera.start();
+        if (cpId === 1) {
+            currentLapCount++;
+            document.getElementById('live-lap-counter').innerText = `完成圈數: ${currentLapCount} 圈`;
+        }
+
+        logBox.innerHTML = `<div class="log-item"><span>學生 [<b>${studentId}</b>] 通過 <b>檢查點 ${cpId}</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
+        speak(`檢查點 ${cpId} 通過`);
+    }
+
+    function resetActiveStudent() {
+        currentLapCount = 0;
+        document.getElementById('live-lap-counter').innerText = `完成圈數: 0 圈`;
+        document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">已重設，等待分站過點...</div>`;
+    }
+
+    async function uploadFinalScore() {
+        const studentId = document.getElementById('active-student-id').value.trim();
+        if (!studentId) {
+            alert('請先輸入當前測驗的學生學號！');
+            return;
+        }
+
+        try {
+            const { error } = await supabaseClient
+                .from('fitness_records')
+                .insert([{ student_id: studentId, category: 'running', score_value: currentLapCount }]);
+
+            if (error) throw error;
+            alert(`🎉 成功上傳學號 ${studentId} 的跑圈成績：${currentLapCount} 圈！`);
+        } catch (err) {
+            alert(`上傳失敗: ${err.message}`);
+        }
+    }
+
+    function generateQRCodes() {
+        const count = parseInt(document.getElementById('cp-count-select').value);
+        const container = document.getElementById('qr-container');
+        container.innerHTML = '';
+
+        const baseUrl = window.location.origin + window.location.pathname.replace('running_hub.html', 'running_cam.html');
+
+        for (let i = 1; i <= count; i++) {
+            const targetUrl = `${baseUrl}?role=cp${i}`;
+            const box = document.createElement('div');
+            box.className = 'qr-box';
+            box.innerHTML = `
+                <p style="margin: 0; font-weight: bold; color: #1565c0; font-size: 0.85rem;">檢查點 ${i} (CP${i})</p>
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(targetUrl)}" alt="CP${i} QR">
+                <p style="margin: 0; font-size: 0.7rem; color: #666; word-break: break-all;">?role=cp${i}</p>
+            `;
+            container.appendChild(box);
+        }
+    }
+
+    async function registerStudent() {
+        const name = document.getElementById('reg-name').value.trim();
+        const studentId = document.getElementById('reg-id').value.trim();
+        if (!name || !studentId) { alert('請填寫完整資訊'); return; }
+
+        try {
+            const { error } = await supabaseClient
+                .from('students_db')
+                .insert([{ student_id: studentId, name: name, pwd: '123' }]);
+            if (error) throw error;
+            alert('✅ 學生註冊成功！');
+            document.getElementById('reg-name').value = '';
+            document.getElementById('reg-id').value = '';
+        } catch (err) {
+            alert(`註冊失敗: ${err.message}`);
+        }
+    }
+
+    const synth = window.speechSynthesis;
+    const speak = (text) => {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'zh-HK';
+        synth.cancel();
+        synth.speak(utter);
+    };
 </script>
 
 </body>
