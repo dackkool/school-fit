@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>跑圈分站感應相機 | Trackpoint</title>
+    <!-- MediaPipe 庫 (使用 Face Detection 偵測人臉過點) -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <!-- Supabase JS 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
+        body {
+            margin: 0;
+            padding: 10px;
+            background-color: #111;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        #container {
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        #badge {
+            background-color: #ff9800;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+
+        video { display: none; }
+        canvas {
+            width: 100%;
+            max-height: 60vh;
+            border-radius: 16px;
+            border: 3px solid #ff9800;
+            object-fit: cover;
+        }
+
+        #status-text {
+            margin-top: 15px;
+            font-size: 1rem;
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .trigger-btn {
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            padding: 12px;
+            font-size: 1.1rem;
+            border-radius: 25px;
+            width: 100%;
+            margin-top: 15px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <div id="badge">📷 正在載入分站身分...</div>
+    <div>
+        <video class="input_video" playsinline></video>
+        <canvas class="output_canvas"></canvas>
+    </div>
+    <div id="status-text">正在連線至主機頻道...</div>
+    <!-- 備用按鈕：若現場環境光線不足無法自動偵測人臉，工作人員可手動點擊觸發 -->
+    <button class="trigger-btn" onclick="manualTrigger()">⚡ 手動模擬學生過點</button>
+</div>
+
+<script>
+    // --- 請填入你的 Supabase 設定 ---
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let role = 'cp1'; // 預設檢查點
+    let supabaseChannel = null;
+    let lastSendTime = 0;
+
+    window.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        role = urlParams.get('role') || 'cp1';
+
+        const badge = document.getElementById('badge');
+        badge.innerText = `📡 當前分站：${role.toUpperCase()}`;
+        if (role === 'cp1') badge.style.backgroundColor = '#4caf50';
+        else if (role === 'cp2') badge.style.backgroundColor = '#2196f3';
+        else if (role === 'cp3') badge.style.backgroundColor = '#9c27b0';
+        else badge.style.backgroundColor = '#e91e63';
+
+        initTrackpointRealtime();
+        startCamera();
+    });
+
+    // 初始化 Realtime 頻道與心跳廣播 (每 3 秒發送一次心跳讓主機知道線上)
+    function initTrackpointRealtime() {
+        supabaseChannel = supabaseClient.channel('school_running_room', {
+            config: { broadcast: { self: true } }
+        });
+
+        supabaseChannel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                document.getElementById('status-text').innerText = `✅ 已連線！相機隨時可感應學生過點。`;
+                setInterval(() => {
+                    supabaseChannel.send({
+                        type: 'broadcast',
+                        event: 'heartbeat',
+                        payload: { checkpoint_id: parseInt(role.replace('cp', '')) }
+                    });
+                }, 3000);
+            }
+        });
+    }
+
+    // 發送過點訊號給 Main Hub
+    function sendTriggerToHub() {
+        const now = Date.now();
+        if (now - lastSendTime < 3500) return; // 冷卻時間 3.5 秒
+        lastSendTime = now;
+
+        const cpId = parseInt(role.replace('cp', ''));
+        const studentId = "S001"; // 可對應當前辨識到的學生學號
+
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'checkpoint_trigger',
+            payload: { student_id: studentId, checkpoint_id: cpId, timestamp: now }
+        });
+
+        document.getElementById('status-text').innerText = `🚀 已成功發送 [${role.toUpperCase()}] 過點訊號！`;
+        setTimeout(() => {
+            document.getElementById('status-text').innerText = `✅ 運行中：隨時準備偵測下一位學生。`;
+        }, 2000);
+    }
+
+    function manualTrigger() {
+        sendTriggerToHub();
+    }
+
+    // 啟動 MediaPipe 相機與輕量人臉偵測
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const canvasCtx = canvasElement.getContext('2d');
+
+    function onResults(results) {
+        canvasElement.width = videoElement.videoWidth || 480;
+        canvasElement.height = videoElement.videoHeight || 640;
+
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.detections && results.detections.length > 0) {
+            // 當偵測到有人臉靠近鏡頭時，自動觸發過點
+            const now = Date.now();
+            if (now - lastSendTime > 4000) {
+                sendTriggerToHub();
+            }
+        }
+        canvasCtx.restore();
+    }
+
+    const faceDetection = new FaceDetection({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`});
+    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.6 });
+    faceDetection.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+        onFrame: async () => { await faceDetection.send({image: videoElement}); },
+        width: 480, height: 640
+    });
+    camera.start();
+</script>
+
+</body>
+</html>
