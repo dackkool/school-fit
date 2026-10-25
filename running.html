@@ -180,15 +180,16 @@
         /* QR Code 顯示區 */
         .qr-container {
             text-align: center;
-            padding: 10px;
+            padding: 8px;
             background: #f9f9f9;
             border-radius: 10px;
             border: 1px dashed #2196f3;
+            margin-bottom: 8px;
         }
         .qr-container img {
-            width: 160px;
-            height: 160px;
-            margin: 8px auto;
+            width: 130px;
+            height: 130px;
+            margin: 4px auto;
             display: block;
         }
 
@@ -266,7 +267,7 @@
         <div class="tab-header">
             <button class="tab-btn active" onclick="switchTab('challenge')">🏃‍♂️ 跑圈主控</button>
             <button class="tab-btn" onclick="switchTab('trackpoint')">📷 分站設定</button>
-            <button class="tab-btn" onclick="switchTab('qrcode')">📱 主機 QR</button>
+            <button class="tab-btn" onclick="switchTab('qrcode')">📱 分機 QR</button>
             <button class="tab-btn" onclick="switchTab('history')">📊 紀錄</button>
         </div>
 
@@ -283,7 +284,7 @@
             </div>
 
             <div class="tips-box" id="mode-tips">
-                💡 <b>提示：</b>本機為經過 Session 驗證的<b>主機</b>。您可以直接開始計時，或讓其他手機掃描主機 QR Code 成為檢查點分機。
+                💡 <b>提示：</b>本機為主機。您可以直接開始計時，或讓其他手機掃描「分機 QR」成為檢查點分機。
             </div>
 
             <div id="score-board">
@@ -322,33 +323,36 @@
             </div>
 
             <div class="tips-box">
-                ℹ️ <b>說明：</b>若這台手機不是主登入裝置，或是你想把它放在跑道轉彎處當作感應點，請在此切換為「檢查點 2/3」。當學生經過時，本機會自動透過雲端廣播發送訊號給主機！
+                ℹ️ <b>說明：</b>若透過掃描專屬 QR Code 進來，系統會自動切換為對應分站。你也可以在此手動切換角色。
             </div>
 
-            <div style="text-align: center; padding: 15px; background: #fff3e0; border-radius: 8px; color: #e65100; font-size: 0.85rem;">
-                📡 <b>即時聯机狀態：</b><span id="realtime-status">已連線至 Supabase 頻道</span>
+            <div style="text-align: center; padding: 10px; background: #fff3e0; border-radius: 8px; color: #e65100; font-size: 0.85rem;">
+                📡 <b>即時連線狀態：</b><span id="realtime-status">已連線至 Supabase 頻道</span>
             </div>
         </div>
 
-        <!-- TAB 3: QR Code 顯示區 -->
+        <!-- TAB 3: QR Code 顯示區 (分別生成 CP2 與 CP3 的 QR Code) -->
         <div id="tab-qrcode" class="tab-content" style="display: none;">
             <div>
-                <h1>掃描成為 Trackpoint 分機</h1>
-                <div class="subtitle">用其他手機掃描以加入跑圈系統</div>
+                <h1>生成分機專用 QR Code</h1>
+                <div class="subtitle">讓其他手機掃描直接變身為 Trackpoint</div>
             </div>
 
-            <div class="qr-container">
-                <p style="margin: 0; font-weight: bold; color: #333; font-size: 0.85rem;">請用其他手機鏡頭掃描下方 QR Code：</p>
-                <!-- 使用公開 API 即時生成目標網址的 QR Code -->
-                <img id="qr-img" src="" alt="QR Code">
-                <p style="margin: 0; font-size: 0.75rem; color: #666; word-break: break-all;">https://school-fit-one.vercel.app/running.html</p>
+            <div style="display: flex; gap: 10px;">
+                <!-- 檢查點 2 QR -->
+                <div class="qr-container" style="flex: 1;">
+                    <p style="margin: 0; font-weight: bold; color: #2196f3; font-size: 0.8rem;">檢查點 2 (CP2)</p>
+                    <img id="qr-cp2" src="" alt="CP2 QR">
+                </div>
+                <!-- 檢查點 3 QR -->
+                <div class="qr-container" style="flex: 1;">
+                    <p style="margin: 0; font-weight: bold; color: #ff9800; font-size: 0.8rem;">檢查點 3 (CP3)</p>
+                    <img id="qr-cp3" src="" alt="CP3 QR">
+                </div>
             </div>
 
-            <div class="tips-box" style="margin-top: 8px;">
-                💡 <b>使用步驟：</b><br>
-                1. 其他手機掃描後會開啟跑圈網頁。<br>
-                2. 在分機手機點擊<b>「分站設定」</b>，切換為「檢查點 2」或「檢查點 3」。<br>
-                3. 架設在跑道不同位置即可多機同步！
+            <div class="tips-box" style="margin-top: 4px;">
+                💡 <b>使用說明：</b>拿其他手機直接掃描上方對應的 QR Code，開網頁後就會自動成為該分站相機！
             </div>
         </div>
 
@@ -372,33 +376,43 @@
 
 <script>
     // --- 1. 請填入你的 Supabase 設定 ---
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // --- 2. Session 驗證與主機判定 ---
+    // --- 2. Session 驗證與網址參數角色自動切換 ---
     window.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
         const urlStudentId = urlParams.get('student_id');
+        const roleParam = urlParams.get('role'); // 接收網址帶的 role 參數 (例如 cp2 或 cp3)
         const localStudentId = sessionStorage.getItem('current_student_id');
 
-        if (!localStudentId || (urlStudentId && urlStudentId !== localStudentId)) {
-            alert('⚠️ 偵測到身分不符或未登入，請先重新登入！');
+        // 如果是透過 QR Code 掃描進來的分機手機，允許不用登入主帳號，或預設沿用
+        if (!localStudentId && !roleParam) {
+            alert('⚠️ 偵測到未登入，請先從主頁登入！');
             window.location.href = 'index.html';
             return;
         }
 
         const studentIdInput = document.getElementById('student-id');
-        if (studentIdInput) {
+        if (studentIdInput && localStudentId) {
             studentIdInput.value = localStudentId;
             studentIdInput.disabled = true;
         }
 
-        // 動態載入 QR Code 圖片
-        const targetUrl = encodeURIComponent("https://school-fit-one.vercel.app/running.html");
-        document.getElementById('qr-img').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${targetUrl}`;
+        // 🚀 關鍵：如果網址帶有 ?role=cp2 或 ?role=cp3，自動切換為對應分站！
+        if (roleParam === 'cp2' || roleParam === 'cp3') {
+            currentRole = roleParam;
+            document.getElementById('device-role-select').value = roleParam;
+            updateRoleUI();
+        }
 
-        // 初始化 Supabase Realtime 頻道以進行多機廣播
+        // 動態生成不同分站的 QR Code 圖片
+        const baseUrl = window.location.origin + window.location.pathname;
+        document.getElementById('qr-cp2').src = `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(baseUrl + '?role=cp2')}`;
+        document.getElementById('qr-cp3').src = `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(baseUrl + '?role=cp3')}`;
+
+        // 初始化 Supabase Realtime 頻道
         initRealtimeChannel();
     });
 
@@ -461,7 +475,6 @@
         supabaseChannel
             .on('broadcast', { event: 'checkpoint_trigger' }, payload => {
                 const data = payload.payload;
-                // 只有當前裝置是「主機 (main)」時，才接收分站傳來的過點訊號並累計圈數
                 if (currentRole === 'main' && isRunning) {
                     handleMainDeviceReceiveTrigger(data.student_id, data.checkpoint_id);
                 }
@@ -473,11 +486,14 @@
             });
     }
 
-    // 切換裝置角色 (主機 vs 檢查點分機)
+    // 手動或自動切換角色時更新介面提示
     function changeDeviceRole() {
         currentRole = document.getElementById('device-role-select').value;
+        updateRoleUI();
+    }
+
+    function updateRoleUI() {
         const roleSubtitle = document.getElementById('device-role-subtitle');
-        
         if (currentRole === 'main') {
             hudMode.innerText = '主機 (Main)';
             hudMode.style.color = '#4caf50';
@@ -487,7 +503,7 @@
             hudMode.innerText = `分站 (${currentRole.toUpperCase()})`;
             hudMode.style.color = '#ff9800';
             roleSubtitle.innerText = `當前身分：${currentRole.toUpperCase()} 檢查點攝影機`;
-            document.getElementById('mode-tips').innerHTML = `💡 <b>提示：</b>本機已變成 <b>${currentRole.toUpperCase()}</b> 分機。當鏡頭偵測到學生時，會自動無線發送給主機！`;
+            document.getElementById('mode-tips').innerHTML = `💡 <b>提示：</b>本機已透過 QR Code 自動變成 <b>${currentRole.toUpperCase()}</b> 分機。當學生經過時會自動發送訊號！`;
         }
     }
 
@@ -519,20 +535,17 @@
                     startBtn.disabled = true;
                 }
             } else {
-                // 運行中偵測過點
                 const now = Date.now();
                 if (now - lastTriggerTime > 3500) { // 冷卻時間 3.5 秒
                     lastTriggerTime = now;
-                    const studentId = studentIdInput.value.trim();
+                    const studentId = studentIdInput.value.trim() || "Guest";
 
                     if (currentRole === 'main') {
-                        // 主機本身兼任起終點 (CP1)
                         handleMainDeviceReceiveTrigger(studentId, 1);
                     } else {
-                        // 分機廣播訊號給主機
                         const cpId = currentRole === 'cp2' ? 2 : 3;
                         feedbackDisplay.innerText = `📡 分站 ${cpId} 偵測到學生，已發送訊號！`;
-                        speak(`分站 ${cpId} 通過`);
+                        speak(`通過檢查點 ${cpId}`);
                         
                         supabaseChannel.send({
                             type: 'broadcast',
@@ -556,7 +569,6 @@
     });
     camera.start();
 
-    // 主機接收過點邏輯
     function handleMainDeviceReceiveTrigger(studentId, cpId) {
         if (cpId === 1) {
             lapCounter++;
@@ -599,6 +611,8 @@
         isRunning = false;
 
         const studentId = studentIdInput.value.trim();
+        if (!studentId) return;
+
         feedbackDisplay.innerText = `正在上傳成績至 Supabase...`;
         speak(`挑戰結束，總共完成 ${lapCounter} 圈。`);
 
