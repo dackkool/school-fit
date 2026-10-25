@@ -12,12 +12,12 @@
     <style>
         * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
         body { margin: 0; padding: 15px; background-color: #e3f2fd; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        #main-card { width: 100%; max-width: 900px; background-color: white; border-radius: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 20px; }
+        #main-card { width: 100%; max-width: 950px; background-color: white; border-radius: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 20px; }
         h1 { color: #1565c0; font-size: 1.5rem; margin: 0 0 5px 0; text-align: center; }
         .subtitle { font-size: 0.8rem; color: #666; margin-bottom: 15px; text-align: center; }
 
-        .tab-header { display: flex; border-bottom: 2px solid #eee; margin-bottom: 15px; }
-        .tab-btn { flex: 1; padding: 10px; background: none; border: none; font-size: 0.95rem; font-weight: bold; color: #888; cursor: pointer; transition: 0.2s; }
+        .tab-header { display: flex; border-bottom: 2px solid #eee; margin-bottom: 15px; flex-wrap: wrap; }
+        .tab-btn { flex: 1; min-width: 110px; padding: 10px; background: none; border: none; font-size: 0.9rem; font-weight: bold; color: #888; cursor: pointer; transition: 0.2s; }
         .tab-btn.active { color: #1565c0; border-bottom: 3.5px solid #1565c0; }
         .tab-content { display: none; flex-direction: column; }
         .tab-content.active { display: flex; }
@@ -32,20 +32,21 @@
         .qr-box { background: #fafafa; border: 1.5px dashed #1565c0; border-radius: 12px; padding: 10px; text-align: center; }
         .qr-box img { width: 120px; height: 120px; margin: 5px auto; display: block; }
 
-        #live-log { background: #fafafa; border: 1px solid #ddd; border-radius: 10px; height: 220px; overflow-y: auto; padding: 10px; font-size: 0.9rem; margin-bottom: 10px; }
+        #live-log { background: #fafafa; border: 1px solid #ddd; border-radius: 10px; height: 200px; overflow-y: auto; padding: 10px; font-size: 0.9rem; margin-bottom: 10px; }
         .log-item { padding: 6px 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+
+        /* 歷史成績與建議面板 */
+        .history-container { background: #fafafa; border: 1px solid #ddd; border-radius: 12px; padding: 15px; max-height: 350px; overflow-y: auto; }
+        .analysis-card { background: #e3f2fd; border-left: 5px solid #1565c0; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem; color: #0d47a1; }
+        table.history-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+        table.history-table th, table.history-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        table.history-table th { background-color: #f5f5f5; color: #333; }
 
         .input-group { margin-bottom: 10px; }
         .input-group label { font-size: 0.85rem; color: #444; font-weight: bold; display: block; margin-bottom: 4px; }
         .input-group input, .input-group select { width: 100%; padding: 8px 10px; font-size: 0.95rem; border-radius: 8px; border: 1.5px solid #ccc; }
 
-        /* 🔒 鎖定學號欄位樣式 (唯讀灰色背景) */
-        input[readonly] {
-            background-color: #f0f0f0;
-            color: #555;
-            cursor: not-allowed;
-            border: 1.5px solid #d0d0d0 !important;
-        }
+        input[readonly] { background-color: #f0f0f0; color: #555; cursor: not-allowed; border: 1.5px solid #d0d0d0 !important; }
 
         button.btn-primary { width: 100%; padding: 10px; font-size: 1rem; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background-color: #1565c0; margin-top: 5px; }
         button.btn-primary:hover { opacity: 0.9; }
@@ -58,13 +59,14 @@
 
 <div id="main-card">
     <h1>校園智慧跑圈統籌主機 (Main Hub)</h1>
-    <div class="subtitle">多站順序過點驗證・圈速精準計時・Supabase 成績上傳</div>
+    <div class="subtitle">多站順序過點驗證・圈速精準計時・歷史趨勢分析與建議</div>
 
     <div class="status-grid" id="status-grid-container"></div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('monitor')">⚡ 即時成績統籌</button>
-        <button class="tab-btn" onclick="switchTab('qr')">📱 生成分機 QR (2-8)</button>
+        <button class="tab-btn" onclick="switchTab('qr')">📱 生成分機 QR</button>
+        <button class="tab-btn" onclick="switchTab('history')" onclick="loadStudentHistory()">📈 往績分析與建議</button>
         <button class="tab-btn" onclick="switchTab('students')">👤 人臉樣貌登記</button>
     </div>
 
@@ -72,8 +74,7 @@
     <div id="tab-monitor" class="tab-content active">
         <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
             <div style="flex: 1;">
-                <label style="font-size: 0.85rem; font-weight: bold;">當前測驗學生學號 (已鎖定，不可更改)：</label>
-                <!-- 🔒 加上 readonly 屬性，防止手動修改 -->
+                <label style="font-size: 0.85rem; font-weight: bold;">當前測驗學生學號 (已鎖定)：</label>
                 <input type="text" id="active-student-id" readonly placeholder="尚未登入" style="padding: 6px; width: 100%; border-radius: 6px;">
             </div>
             <div>
@@ -88,7 +89,7 @@
         <div id="live-log">
             <div style="text-align: center; color: #888; padding: 20px;">請由 CP1 出發，依序通過所有檢查點...</div>
         </div>
-        <button class="btn-primary" onclick="uploadLapScores()" style="background-color: #2e7d32;">💾 上傳所有圈速成績至 Supabase</button>
+        <button class="btn-primary" onclick="uploadLapScores()" style="background-color: #2e7d32;">💾 上傳所有圈速成績至 Supabase (類別: running)</button>
     </div>
 
     <!-- TAB 2: 生成分機 QR Code -->
@@ -108,7 +109,34 @@
         <div class="qr-grid" id="qr-container"></div>
     </div>
 
-    <!-- TAB 3: 學生人臉樣貌登記 -->
+    <!-- TAB 3: 往績分析與建議 -->
+    <div id="tab-history" class="tab-content" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <strong>📊 個人跑圈歷史與趨勢分析</strong>
+            <button class="btn-primary" onclick="loadStudentHistory()" style="width: auto; padding: 6px 14px; font-size: 0.85rem; margin: 0;">🔄 重新載入數據</button>
+        </div>
+        <div class="history-container">
+            <div id="analysis-advice" class="analysis-card">正在載入體能分析與建議...</div>
+            <div id="history-table-container">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>記錄 ID</th>
+                            <th>學生學號</th>
+                            <th>項目類別</th>
+                            <th>圈速 / 成績 (秒)</th>
+                            <th>測驗時間</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-tbody">
+                        <tr><td colspan="5" style="color: #888; padding: 20px;">載入中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 4: 學生人臉樣貌登記 -->
     <div id="tab-students" class="tab-content" style="display: none;">
         <div class="camera-box">
             <video id="reg-video" autoplay muted playsinline></video>
@@ -116,7 +144,6 @@
         <div id="model-status" style="text-align: center; font-size: 0.8rem; color: #ff9800; margin-bottom: 8px;">🔄 正在載入 AI 人臉模型...</div>
         <div class="input-group">
             <label>學生學號 (已鎖定)：</label>
-            <!-- 🔒 同樣鎖定登記頁面的學號 -->
             <input type="text" id="reg-id" readonly placeholder="尚未登入" style="background-color: #f0f0f0;">
         </div>
         <div class="input-group">
@@ -128,8 +155,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
@@ -141,7 +168,6 @@
     let recordedLapTimes = []; 
 
     window.addEventListener('DOMContentLoaded', async () => {
-        // 從 sessionStorage 讀取登入學號並鎖定
         const loggedStudentId = sessionStorage.getItem('current_student_id');
         const loggedName = sessionStorage.getItem('current_student_name');
 
@@ -150,7 +176,6 @@
             document.getElementById('reg-id').value = loggedStudentId;
             if (loggedName) document.getElementById('reg-name').value = loggedName;
         } else {
-            // 測試用預設值（若未從 index 登入）
             document.getElementById('active-student-id').value = "S001";
             document.getElementById('reg-id').value = "S001";
         }
@@ -180,7 +205,7 @@
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => { c.classList.remove('active'); c.style.display = 'none'; });
 
-        const tabs = { 'monitor': 0, 'qr': 1, 'students': 2 };
+        const tabs = { 'monitor': 0, 'qr': 1, 'history': 2, 'students': 3 };
         document.querySelectorAll('.tab-btn')[tabs[tabName]].classList.add('active');
         const target = document.getElementById(`tab-${tabName}`);
         target.classList.add('active');
@@ -188,6 +213,76 @@
 
         if (tabName === 'students') startRegistrationCamera();
         else stopRegistrationCamera();
+
+        if (tabName === 'history') loadStudentHistory();
+    }
+
+    // 📈 載入歷史成績並生成分析與建議
+    async function loadStudentHistory() {
+        const studentId = document.getElementById('active-student-id').value.trim();
+        const tbody = document.getElementById('history-tbody');
+        const adviceBox = document.getElementById('analysis-advice');
+
+        if (!studentId) {
+            tbody.innerHTML = `<tr><td colspan="5">尚未指定學生學號</td></tr>`;
+            adviceBox.innerHTML = `💡 <b>提示：</b> 請先確認已登入學生帳號。`;
+            return;
+        }
+
+        adviceBox.innerHTML = `🔄 正在分析 ${studentId} 的跑圈歷史數據...`;
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('fitness_records')
+                .select('*')
+                .eq('student_id', studentId)
+                .eq('category', 'running')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="color: #888; padding: 20px;">尚無跑圈記錄</td></tr>`;
+                adviceBox.innerHTML = `💡 <b>表現分析與建議：</b> 目前尚無您的跑圈記錄。建議完成測驗並點擊「上傳所有圈速成績」來累積數據，以獲取專屬體能評估！`;
+                return;
+            }
+
+            // 填充表格
+            tbody.innerHTML = '';
+            let totalScore = 0;
+            data.forEach((row, index) => {
+                totalScore += row.score_value;
+                const timeStr = new Date(row.created_at).toLocaleString('zh-HK');
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${row.id || index + 1}</td>
+                        <td>${row.student_id}</td>
+                        <td><span style="background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 4px; font-weight: bold;">running</span></td>
+                        <td><b>${row.score_value}</b> 秒</td>
+                        <td>${timeStr}</td>
+                    </tr>
+                `;
+            });
+
+            // 計算平均圈速並提供建議
+            const avgSpeed = (totalScore / data.length).toFixed(2);
+            let adviceHtml = `🎯 <b>體能表現分析摘要：</b> 您總共完成了 <b>${data.length}</b> 次跑圈記錄。<br>`;
+            adviceHtml += `⚡ 平均每圈圈速為：<b>${avgSpeed} 秒</b>。<br>`;
+
+            if (avgSpeed < 30) {
+                adviceHtml += `🔥 <b>專業建議：</b> 速度表現非常優秀！爆發力與心肺耐力極佳，建議在後續訓練中維持節奏，並注意適度伸展。`;
+            } else if (avgSpeed < 60) {
+                adviceHtml += `👍 <b>專業建議：</b> 表現穩健！體能狀態良好。若想進一步提升成績，可透過間歇跑訓練來加強後段耐力。`;
+            } else {
+                adviceHtml += `💡 <b>專業建議：</b> 剛開始起步或耐力尚在建立中。建議以穩定呼吸、均勻步伐為主，循序漸進提升速度！`;
+            }
+
+            adviceBox.innerHTML = adviceHtml;
+
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="5" style="color: #d32f2f;">載入失敗: ${err.message}</td></tr>`;
+            adviceBox.innerHTML = `❌ 無法讀取歷史數據，請檢查資料庫連線。`;
+        }
     }
 
     let regStream = null;
@@ -222,16 +317,9 @@
     function initHubRealtime() {
         supabaseChannel = supabaseClient.channel('school_running_room', { config: { broadcast: { self: true } } });
         supabaseChannel
-            .on('broadcast', { event: 'heartbeat' }, payload => { 
-                const cpId = payload.payload.checkpoint_id;
-                trackpointHeartbeats[cpId] = Date.now(); 
-            })
-            .on('broadcast', { event: 'checkpoint_trigger' }, payload => { 
-                handleTrackpointTrigger(payload.payload.student_id, payload.payload.checkpoint_id, payload.payload.timestamp); 
-            })
-            .subscribe((status) => {
-                console.log("Supabase Realtime 連線狀態: ", status);
-            });
+            .on('broadcast', { event: 'heartbeat' }, payload => { trackpointHeartbeats[payload.payload.checkpoint_id] = Date.now(); })
+            .on('broadcast', { event: 'checkpoint_trigger' }, payload => { handleTrackpointTrigger(payload.payload.student_id, payload.payload.checkpoint_id, payload.payload.timestamp); })
+            .subscribe();
     }
 
     function updateStatusGrid() {
@@ -310,6 +398,7 @@
         document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">已重新計時，請由 CP1 出發...</div>`;
     }
 
+    // 💾 將圈速上傳至 Supabase（category 固定為 "running"）
     async function uploadLapScores() {
         const studentId = document.getElementById('active-student-id').value.trim();
         if (!studentId) { alert('學生學號不得為空！'); return; }
@@ -321,13 +410,14 @@
                     .from('fitness_records')
                     .insert([{ 
                         student_id: studentId, 
-                        category: `running_lap_${item.lap}`, 
-                        score_value: item.duration 
+                        category: 'running', // 類別統一為 running
+                        score_value: item.duration // 秒數
                     }]);
                 if (error) throw error;
             }
 
             alert(`🎉 成功上傳學號 ${studentId} 的 ${recordedLapTimes.length} 筆圈速成績至 Supabase！`);
+            loadStudentHistory(); // 上傳後自動重新整理歷史與分析
         } catch (err) {
             alert(`上傳失敗: ${err.message}`);
         }
