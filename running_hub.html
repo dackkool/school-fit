@@ -319,7 +319,7 @@
         const container = document.getElementById('qr-container');
         container.innerHTML = '';
 
-        const baseUrl = window.location.origin + window.location.pathname.replace('hub.html', 'running.html');
+        const baseUrl = window.location.origin + window.location.pathname.replace('running_hub.html', 'running_cam.html');
 
         for (let i = 1; i <= count; i++) {
             const targetUrl = `${baseUrl}?role=cp${i}`;
