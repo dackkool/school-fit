@@ -42,7 +42,6 @@
         button.btn-primary { width: 100%; padding: 10px; font-size: 1rem; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background-color: #1565c0; margin-top: 5px; }
         button.btn-primary:hover { opacity: 0.9; }
 
-        /* 相機預覽區 */
         .camera-box { position: relative; width: 100%; max-width: 320px; height: 240px; background: #000; margin: 0 auto 10px auto; border-radius: 12px; overflow: hidden; }
         .camera-box video { width: 100%; height: 100%; object-fit: cover; }
     </style>
@@ -53,7 +52,6 @@
     <h1>校園智慧跑圈統籌主機 (Main Hub)</h1>
     <div class="subtitle">連線監控・QR Code 分發・學生人臉樣貌登記與成績統籌</div>
 
-    <!-- 4 個分站即時連線狀態看板 -->
     <div class="status-grid">
         <div class="status-card" id="cp1-status"><div class="status-title">檢查點 1 (起終點)</div><div class="status-indicator">離線</div></div>
         <div class="status-card" id="cp2-status"><div class="status-title">檢查點 2</div><div class="status-indicator">離線</div></div>
@@ -120,8 +118,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
@@ -140,12 +138,12 @@
         initHubRealtime();
         setInterval(checkTrackpointHealth, 2000);
         
-        // 載入 face-api.js AI 模型
         loadFaceModels();
     });
 
     async function loadFaceModels() {
-        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/cddlib/face-api.js/models';
+        // 🚀 指向專案內置的 models 資料夾
+        const MODEL_URL = './models';
         try {
             await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
             await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
@@ -155,7 +153,7 @@
             document.getElementById('model-status').style.color = '#4caf50';
             document.getElementById('capture-btn').disabled = false;
         } catch (err) {
-            document.getElementById('model-status').innerText = '❌ 模型載入失敗，請重新整理頁面。';
+            document.getElementById('model-status').innerText = '❌ 模型載入失敗，請檢查 /models 資料夾內的檔案是否完整。';
             console.error(err);
         }
     }
@@ -192,7 +190,6 @@
         }
     }
 
-    // 擷取人臉 128 維特徵並存入 Supabase
     async function captureAndRegisterFace() {
         const studentId = document.getElementById('reg-id').value.trim();
         const name = document.getElementById('reg-name').value.trim();
@@ -209,17 +206,13 @@
             return;
         }
 
-        // 將 128 維 Float32Array 特徵轉為陣列轉 JSON 存入
         const descriptorArray = Array.from(detection.descriptor);
 
         try {
             const { error } = await supabaseClient
                 .from('students_db')
-                .upsert([{ 
-                    student_id: studentId, 
-                    name: name, 
-                    face_encoding: JSON.stringify(descriptorArray) 
-                }], { onConflict: 'student_id' });
+                .update({ face_encoding: JSON.stringify(descriptorArray) })
+                .eq('student_id', studentId);
 
             if (error) throw error;
             alert(`🎉 學號 [${studentId}] 人臉樣貌特徵已成功登記至雲端！`);
