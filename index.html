@@ -159,32 +159,32 @@
             <button class="auth-tab-btn" onclick="switchAuthTab('register')">申請帳戶</button>
         </div>
 
-        <!-- 表單 A: 登入 -->
-        <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+        <!-- 表單 A: 登入 (加入 autocomplete="off" 防止自動填入) -->
+        <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)" autocomplete="off">
             <div class="input-group">
                 <label>學生學號：</label>
-                <input type="text" id="login-student-id" placeholder="例如: S001" required>
+                <input type="text" id="login-student-id" placeholder="例如: S001" autocomplete="off" required>
             </div>
             <div class="input-group">
                 <label>登入密碼：</label>
-                <input type="password" id="login-password" placeholder="請輸入密碼" required>
+                <input type="password" id="login-password" placeholder="請輸入密碼" autocomplete="new-password" required>
             </div>
             <button type="submit" class="btn-primary">立即登入</button>
         </form>
 
-        <!-- 表單 B: 註冊 -->
-        <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+        <!-- 表單 B: 註冊 (加入 autocomplete="off" 防止自動填入) -->
+        <form id="register-form" class="auth-form" onsubmit="handleRegister(event)" autocomplete="off">
             <div class="input-group">
                 <label>學生姓名：</label>
-                <input type="text" id="reg-name" placeholder="例如: 陳小明" required>
+                <input type="text" id="reg-name" placeholder="例如: 陳小明" autocomplete="off" required>
             </div>
             <div class="input-group">
                 <label>學生學號：</label>
-                <input type="text" id="reg-student-id" placeholder="例如: S001" required>
+                <input type="text" id="reg-student-id" placeholder="例如: S001" autocomplete="off" required>
             </div>
             <div class="input-group">
                 <label>設定密碼：</label>
-                <input type="password" id="reg-password" placeholder="建議 4 位或以上密碼" required>
+                <input type="password" id="reg-password" placeholder="建議 4 位或以上密碼" autocomplete="new-password" required>
             </div>
             <button type="submit" class="btn-primary" style="background-color: #4caf50;">成功申請並登入</button>
         </form>
@@ -222,14 +222,24 @@
                 </div>
                 <div class="arrow-icon">➔</div>
             </div>
+
+            <!-- 項目 3: 智慧跑圈系統 (新增) -->
+            <div class="exercise-card" onclick="navigateToExercise('running.html')">
+                <div class="exercise-icon">🏃‍♂️</div>
+                <div class="exercise-info">
+                    <div class="exercise-title">智慧跑圈系統</div>
+                    <div class="exercise-desc">AI 動作與多機檢查點過點計圈</div>
+                </div>
+                <div class="arrow-icon">➔</div>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
     // --- 1. 請填入你自己的 Supabase 資料 ---
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supabase_url'; 
+    const SUPABASE_ANON_KEY = 'supabase_anon_key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const msgBox = document.getElementById('msg-box');
@@ -293,7 +303,6 @@
             msgBox.style.color = '#4caf50';
             msgBox.innerText = '🎉 帳戶申請成功！正在登入...';
             
-            // 登入狀態寫入 LocalStorage
             saveSession(studentId, name);
             setTimeout(() => showMenuView(name), 1000);
 
@@ -343,7 +352,7 @@
         }
     }
 
-    // 保存 LocalStorage 狀態
+    // 保存 Session 狀態
     function saveSession(studentId, name) {
         sessionStorage.setItem('current_student_id', studentId);
         sessionStorage.setItem('current_student_name', name);
@@ -356,23 +365,27 @@
         document.getElementById('user-display-name').innerText = name;
     }
 
-    // 登出
+    // 登出 (同時清空輸入框，防止殘留)
     function handleLogout() {
         sessionStorage.removeItem('current_student_id');
         sessionStorage.removeItem('current_student_name');
+        
+        // 清空登入與註冊輸入框
+        document.getElementById('login-form').reset();
+        document.getElementById('register-form').reset();
+
         document.getElementById('menu-view').style.display = 'none';
         document.getElementById('auth-view').style.display = 'block';
         msgBox.innerText = '';
     }
 
-    // 修改後：在「新分頁」中開啟測驗頁面
+    // 在「新分頁」中開啟測驗頁面
     function navigateToExercise(pageUrl) {
         const studentId = sessionStorage.getItem('current_student_id');
         if (!studentId) {
             alert('請先登入！');
             return;
         }
-        // 使用 window.open 開啟新分頁，並帶入學號
         window.open(`${pageUrl}?student_id=${encodeURIComponent(studentId)}`, '_blank');
     }
 </script>
