@@ -15,8 +15,11 @@
         #container { width: 100%; max-width: 500px; text-align: center; }
         #badge { background-color: #ff9800; padding: 8px 16px; border-radius: 20px; font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; display: inline-block; }
         .video-wrapper { position: relative; width: 100%; max-height: 55vh; border-radius: 16px; overflow: hidden; border: 3px solid #ff9800; background: #000; }
-        video { width: 100%; height: 100%; object-fit: cover; }
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        
+        /* 🚀 採用前置鏡頭與水平鏡像翻轉 */
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+        
         #status-text { margin-top: 15px; font-size: 0.95rem; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; }
     </style>
 </head>
@@ -32,15 +35,14 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
     let supabaseChannel = null;
-    let lastSendTime = 0;
     let faceMatcher = null;
-    let studentLastTrigger = {}; // 防重複觸發計時
+    let studentLastTrigger = {}; // 記錄每個學生上次在該站觸發的時間，避免站著不動一直重複洗版
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -49,7 +51,7 @@
 
         initTrackpointRealtime();
         await loadModelsAndStudentFaceDB();
-        startCamera();
+        startFrontCamera(); // 呼叫前置鏡頭
     });
 
     async function loadModelsAndStudentFaceDB() {
@@ -68,7 +70,7 @@
             if (error) throw error;
 
             if (!data || data.length === 0) {
-                document.getElementById('status-text').innerText = '⚠️ 雲端尚無學生人臉數據，請先完成登記！';
+                document.getElementById('status-text').innerText = '⚠️ 雲端尚無學生人臉數據，請先在主機登記！';
                 return;
             }
 
@@ -84,7 +86,7 @@
 
             if (labeledDescriptors.length > 0) {
                 faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
-                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！相機準備就緒...`;
+                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！前置相機就緒...`;
             }
         } catch (err) {
             console.error(err);
@@ -107,21 +109,22 @@
         });
     }
 
-    async function startCamera() {
+    // 🚀 強制使用前置鏡頭 (User / Selfie)
+    async function startFrontCamera() {
         const video = document.getElementById('cam-video');
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: 640, height: 480 } });
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: "user", // 指定前置鏡頭
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                } 
+            });
             video.srcObject = stream;
             video.addEventListener('play', onVideoPlay);
         } catch (err) {
-            // 若後置失敗則使用前置
-            try {
-                const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-                video.srcObject = fallbackStream;
-                video.addEventListener('play', onVideoPlay);
-            } catch (e) {
-                alert('無法存取相機！');
-            }
+            alert('無法存取前置相機，請檢查瀏覽器相機權限！');
+            console.error(err);
         }
     }
 
@@ -159,7 +162,8 @@
 
     function sendTriggerToHub(studentId) {
         const now = Date.now();
-        if (studentLastTrigger[studentId] && (now - studentLastTrigger[studentId] < 4000)) return;
+        // 🔒 增加冷卻時間至 6 秒，防止同一個學生站在鏡頭前時一直重複觸發送訊號
+        if (studentLastTrigger[studentId] && (now - studentLastTrigger[studentId] < 6000)) return;
         studentLastTrigger[studentId] = now;
 
         const cpId = parseInt(role.replace('cp', ''));
