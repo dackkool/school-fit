@@ -99,7 +99,7 @@
             font-size: 1rem;
             color: #33691e;
             font-weight: bold;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -114,17 +114,42 @@
             cursor: pointer;
         }
 
+        /* 登入後的內部 Sub Tabs (挑戰項目 vs 修改個人資料) */
+        .menu-sub-tabs {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 15px;
+        }
+        .menu-sub-btn {
+            flex: 1;
+            padding: 8px;
+            background: none;
+            border: none;
+            font-size: 0.95rem;
+            font-weight: bold;
+            color: #888;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .menu-sub-btn.active {
+            color: #33691e;
+            border-bottom: 3.5px solid #33691e;
+        }
+
+        .sub-view { display: none; flex-direction: column; text-align: left; }
+        .sub-view.active { display: flex; }
+
         .exercise-grid {
             display: grid;
             grid-template-columns: 1fr;
-            gap: 15px;
+            gap: 12px;
         }
 
         .exercise-card {
             background: #fff;
             border: 2px solid #f8bbd0;
             border-radius: 16px;
-            padding: 16px;
+            padding: 14px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -139,11 +164,11 @@
             border-color: #ec407a;
         }
 
-        .exercise-icon { font-size: 2.2rem; margin-right: 12px; }
+        .exercise-icon { font-size: 2rem; margin-right: 12px; }
         .exercise-info { text-align: left; flex: 1; }
-        .exercise-title { font-size: 1.15rem; font-weight: bold; color: #c2185b; }
-        .exercise-desc { font-size: 0.8rem; color: #666; margin-top: 2px; }
-        .arrow-icon { font-size: 1.3rem; color: #ec407a; font-weight: bold; }
+        .exercise-title { font-size: 1.1rem; font-weight: bold; color: #c2185b; }
+        .exercise-desc { font-size: 0.78rem; color: #666; margin-top: 2px; }
+        .arrow-icon { font-size: 1.2rem; color: #ec407a; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -159,7 +184,7 @@
             <button class="auth-tab-btn" onclick="switchAuthTab('register')">申請帳戶</button>
         </div>
 
-        <!-- 表單 A: 登入 (加入 autocomplete="off" 防止自動填入) -->
+        <!-- 表單 A: 登入 -->
         <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)" autocomplete="off">
             <div class="input-group">
                 <label>學生學號：</label>
@@ -172,7 +197,7 @@
             <button type="submit" class="btn-primary">立即登入</button>
         </form>
 
-        <!-- 表單 B: 註冊 (加入 autocomplete="off" 防止自動填入) -->
+        <!-- 表單 B: 註冊 -->
         <form id="register-form" class="auth-form" onsubmit="handleRegister(event)" autocomplete="off">
             <div class="input-group">
                 <label>學生姓名：</label>
@@ -183,8 +208,8 @@
                 <input type="text" id="reg-student-id" placeholder="例如: S001" autocomplete="off" required>
             </div>
             <div class="input-group">
-                <label>設定密碼：</label>
-                <input type="password" id="reg-password" placeholder="建議 4 位或以上密碼" autocomplete="new-password" required>
+                <label>設定密碼 (需含大小寫英文字母及數字，最少6字)：</label>
+                <input type="password" id="reg-password" placeholder="請設定強密碼" autocomplete="new-password" required>
             </div>
             <button type="submit" class="btn-primary" style="background-color: #4caf50;">成功申請並登入</button>
         </form>
@@ -194,52 +219,84 @@
 
     <!-- 2. 已登入：項目選擇面板區 -->
     <div id="menu-view">
-        <h1>選擇挑戰項目</h1>
-        <div class="subtitle">請選擇你想進行的體適能 AI 評估</div>
-
         <div class="user-welcome">
             <span>👋 歡迎，<span id="user-display-name">學生</span>！</span>
             <button class="logout-btn" onclick="handleLogout()">登出</button>
         </div>
 
-        <div class="exercise-grid">
-            <!-- 項目 1: 仰臥起坐 -->
-            <div class="exercise-card" onclick="navigateToExercise('situp.html')">
-                <div class="exercise-icon">🧘‍♂️</div>
-                <div class="exercise-info">
-                    <div class="exercise-title">一分鐘仰臥起坐</div>
-                    <div class="exercise-desc">量度腹部肌力與肌耐力 (AI 自動計數)</div>
-                </div>
-                <div class="arrow-icon">➔</div>
-            </div>
+        <!-- 登入後的切換分頁 (挑戰項目 vs 修改個人資料) -->
+        <div class="menu-sub-tabs">
+            <button class="menu-sub-btn active" onclick="switchMenuTab('exercises')">🎯 挑戰項目</button>
+            <button class="menu-sub-btn" onclick="switchMenuTab('profile')">⚙️ 修改個人資料</button>
+        </div>
 
-            <!-- 項目 2: 坐位體前屈 -->
-            <div class="exercise-card" onclick="navigateToExercise('sit-n-reach.html')">
-                <div class="exercise-icon">📏</div>
-                <div class="exercise-info">
-                    <div class="exercise-title">坐位體前屈 (Sit & Reach)</div>
-                    <div class="exercise-desc">量度軀幹與腿後肌群柔軟度</div>
+        <!-- 子分頁 1: 挑戰項目 -->
+        <div id="sub-exercises" class="sub-view active">
+            <div class="subtitle" style="margin-bottom: 12px; text-align: left;">請選擇你想進行的體適能 AI 評估</div>
+            <div class="exercise-grid">
+                <!-- 項目 1: 仰臥起坐 -->
+                <div class="exercise-card" onclick="navigateToExercise('situp.html')">
+                    <div class="exercise-icon">🧘‍♂️</div>
+                    <div class="exercise-info">
+                        <div class="exercise-title">一分鐘仰臥起坐</div>
+                        <div class="exercise-desc">量度腹部肌力與肌耐力 (AI 自動計數)</div>
+                    </div>
+                    <div class="arrow-icon">➔</div>
                 </div>
-                <div class="arrow-icon">➔</div>
-            </div>
 
-            <!-- 項目 3: 智慧跑圈系統 (新增) -->
-            <div class="exercise-card" onclick="navigateToExercise('running_hub.html')">
-                <div class="exercise-icon">🏃‍♂️</div>
-                <div class="exercise-info">
-                    <div class="exercise-title">智慧跑圈系統</div>
-                    <div class="exercise-desc">AI 動作與多機檢查點過點計圈</div>
+                <!-- 項目 2: 坐位體前屈 -->
+                <div class="exercise-card" onclick="navigateToExercise('sit-n-reach.html')">
+                    <div class="exercise-icon">📏</div>
+                    <div class="exercise-info">
+                        <div class="exercise-title">坐位體前屈 (Sit & Reach)</div>
+                        <div class="exercise-desc">量度軀幹與腿後肌群柔軟度</div>
+                    </div>
+                    <div class="arrow-icon">➔</div>
                 </div>
-                <div class="arrow-icon">➔</div>
+
+                <!-- 項目 3: 智慧跑圈系統 -->
+                <div class="exercise-card" onclick="navigateToExercise('running_hub.html')">
+                    <div class="exercise-icon">🏃‍♂️</div>
+                    <div class="exercise-info">
+                        <div class="exercise-title">智慧跑圈系統</div>
+                        <div class="exercise-desc">AI 動作與多機檢查點過點計圈</div>
+                    </div>
+                    <div class="arrow-icon">➔</div>
+                </div>
             </div>
+        </div>
+
+        <!-- 子分頁 2: 修改個人資料 (新增) -->
+        <div id="sub-profile" class="sub-view">
+            <form onsubmit="handleUpdateProfile(event)" autocomplete="off">
+                <div class="input-group">
+                    <label>修改姓名：</label>
+                    <input type="text" id="update-name" placeholder="輸入新姓名" autocomplete="off" required>
+                </div>
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 12px 0;">
+                <div class="input-group">
+                    <label>輸入舊密碼 (驗證用)：</label>
+                    <input type="password" id="update-old-pwd" placeholder="請輸入目前密碼" autocomplete="new-password">
+                </div>
+                <div class="input-group">
+                    <label>新密碼 (需含大小寫英文字母及數字，最少6字)：</label>
+                    <input type="password" id="update-new-pwd-1" placeholder="留空代表不修改密碼" autocomplete="new-password">
+                </div>
+                <div class="input-group">
+                    <label>確認新密碼：</label>
+                    <input type="password" id="update-new-pwd-2" placeholder="再次輸入新密碼" autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn-primary" style="background-color: #33691e;">儲存個人資料更改</button>
+            </form>
+            <div id="profile-msg-box" style="margin-top: 10px; font-size: 0.9rem; font-weight: bold; min-height: 20px;"></div>
         </div>
     </div>
 </div>
 
 <script>
     // --- 1. 請填入你自己的 Supabase 資料 ---
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const msgBox = document.getElementById('msg-box');
@@ -269,12 +326,49 @@
         }
     }
 
+    // 登入後的內部 Sub Tab 切換 (挑戰項目 vs 修改個人資料)
+    function switchMenuTab(tab) {
+        document.querySelectorAll('.menu-sub-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.sub-view').forEach(view => view.classList.remove('active'));
+
+        if (tab === 'exercises') {
+            document.querySelectorAll('.menu-sub-btn')[0].classList.add('active');
+            document.getElementById('sub-exercises').classList.add('active');
+        } else {
+            document.querySelectorAll('.menu-sub-btn')[1].classList.add('active');
+            document.getElementById('sub-profile').classList.add('active');
+            // 載入當前使用者的最新姓名到輸入框
+            const currentName = sessionStorage.getItem('current_student_name') || '';
+            document.getElementById('update-name').value = currentName;
+            document.getElementById('update-old-pwd').value = '';
+            document.getElementById('update-new-pwd-1').value = '';
+            document.getElementById('update-new-pwd-2').value = '';
+            document.getElementById('profile-msg-box').innerText = '';
+        }
+    }
+
+    // 🔒 正常密碼強度驗證函式 (最少6位，需包含大小寫英文及數字)
+    function validatePasswordStrength(pwd) {
+        if (!pwd) return true; // 若沒打算改密碼則略過
+        const minLength = pwd.length >= 6;
+        const hasLower = /[a-z]/.test(pwd);
+        const hasUpper = /[A-Z]/.test(pwd);
+        const hasNum = /[0-9]/.test(pwd);
+        return minLength && hasLower && hasUpper && hasNum;
+    }
+
     // 處理學生註冊
     async function handleRegister(e) {
         e.preventDefault();
         const name = document.getElementById('reg-name').value.trim();
         const studentId = document.getElementById('reg-student-id').value.trim();
         const password = document.getElementById('reg-password').value.trim();
+
+        if (!validatePasswordStrength(password)) {
+            msgBox.style.color = '#f44336';
+            msgBox.innerText = '⚠️ 密碼強度不足：必須包含大小寫英文字母及數字，且長度至少 6 個字元！';
+            return;
+        }
 
         msgBox.style.color = '#ff9800';
         msgBox.innerText = '正在建立帳戶...';
@@ -293,7 +387,7 @@
                 return;
             }
 
-            // 寫入 Supabase students 表
+            // 寫入 Supabase students_db 表
             const { error } = await supabaseClient
                 .from('students_db')
                 .insert([{ student_id: studentId, name: name, pwd: password }]);
@@ -352,6 +446,86 @@
         }
     }
 
+    // ⚙️ 處理更新個人資料（姓名與密碼變更）
+    async function handleUpdateProfile(e) {
+        e.preventDefault();
+        const studentId = sessionStorage.getItem('current_student_id');
+        const newName = document.getElementById('update-name').value.trim();
+        const oldPwd = document.getElementById('update-old-pwd').value.trim();
+        const newPwd1 = document.getElementById('update-new-pwd-1').value.trim();
+        const newPwd2 = document.getElementById('update-new-pwd-2').value.trim();
+        const pMsgBox = document.getElementById('profile-msg-box');
+
+        if (!studentId) {
+            alert('工作階段已過期，請重新登入！');
+            handleLogout();
+            return;
+        }
+
+        pMsgBox.style.color = '#ff9800';
+        pMsgBox.innerText = '正在驗證並更新資料...';
+
+        try {
+            // 1. 驗證舊密碼是否正確
+            const { data: userRecord, error: fetchErr } = await supabaseClient
+                .from('students_db')
+                .select('pwd')
+                .eq('student_id', studentId)
+                .maybeSingle();
+
+            if (fetchErr) throw fetchErr;
+
+            if (!userRecord || userRecord.pwd !== oldPwd) {
+                pMsgBox.style.color = '#f44336';
+                pMsgBox.innerText = '❌ 舊密碼不正確，驗證失敗！';
+                return;
+            }
+
+            // 準備更新的資料物件
+            let updatePayload = { name: newName };
+
+            // 2. 如果有填寫新密碼，進行安全檢查與兩次輸入比對
+            if (newPwd1 !== '' || newPwd2 !== '') {
+                if (newPwd1 !== newPwd2) {
+                    pMsgBox.style.color = '#f44336';
+                    pMsgBox.innerText = '❌ 兩次輸入的新密碼不一致！';
+                    return;
+                }
+                if (!validatePasswordStrength(newPwd1)) {
+                    pMsgBox.style.color = '#f44336';
+                    pMsgBox.innerText = '⚠️ 新密碼強度不足：需含大小寫英文字母及數字，且至少 6 個字元！';
+                    return;
+                }
+                updatePayload.pwd = newPwd1;
+            }
+
+            // 3. 寫入 Supabase 更新
+            const { error: updateErr } = await supabaseClient
+                .from('students_db')
+                .update(updatePayload)
+                .eq('student_id', studentId);
+
+            if (updateErr) throw updateErr;
+
+            // 更新 Session 與畫面上顯示的歡迎姓名
+            saveSession(studentId, newName);
+            document.getElementById('user-display-name').innerText = newName;
+
+            pMsgBox.style.color = '#4caf50';
+            pMsgBox.innerText = '🎉 個人資料更新成功！';
+
+            // 清空密碼欄位
+            document.getElementById('update-old-pwd').value = '';
+            document.getElementById('update-new-pwd-1').value = '';
+            document.getElementById('update-new-pwd-2').value = '';
+
+        } catch (err) {
+            console.error(err);
+            pMsgBox.style.color = '#f44336';
+            pMsgBox.innerText = `更新失敗: ${err.message}`;
+        }
+    }
+
     // 保存 Session 狀態
     function saveSession(studentId, name) {
         sessionStorage.setItem('current_student_id', studentId);
@@ -363,6 +537,7 @@
         document.getElementById('auth-view').style.display = 'none';
         document.getElementById('menu-view').style.display = 'flex';
         document.getElementById('user-display-name').innerText = name;
+        switchMenuTab('exercises'); // 預設顯示挑戰項目
     }
 
     // 登出 (同時清空輸入框，防止殘留)
@@ -377,6 +552,7 @@
         document.getElementById('menu-view').style.display = 'none';
         document.getElementById('auth-view').style.display = 'block';
         msgBox.innerText = '';
+        switchAuthTab('login');
     }
 
     // 在「新分頁」中開啟測驗頁面
