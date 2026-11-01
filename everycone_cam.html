@@ -48,8 +48,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
@@ -65,7 +65,7 @@
         role = urlParams.get('role') || 'cp1';
         sessionId = urlParams.get('session') || 'default';
         
-        document.getElementById('badge').innerText = `📡 分站相機：${role.toUpperCase()} (預設前置鏡頭)`;
+        document.getElementById('badge').innerText = `📡 分站相機：${role.toUpperCase()} (完整選單與預設前置)`;
 
         initTrackpointRealtime();
         await loadModelsAndStudentFaceDB();
@@ -103,7 +103,7 @@
 
             if (labeledDescriptors.length > 0) {
                 faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
-                document.getElementById('status-text').innerText = `✅ 相機就緒！預設使用前置鏡頭。`;
+                document.getElementById('status-text').innerText = `✅ 相機就緒！所有鏡頭選單已載入。`;
             }
         } catch (err) {
             console.error(err);
@@ -129,8 +129,7 @@
     async function initCameraDevices() {
         const cameraSelect = document.getElementById('camera-select');
         try {
-            // 💡 預設改為請求前置鏡頭 (user)
-            const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
             tempStream.getTracks().forEach(track => track.stop());
 
             const devices = await navigator.mediaDevices.enumerateDevices();
@@ -147,25 +146,32 @@
             videoDevices.forEach((device, index) => {
                 const option = document.createElement('option');
                 option.value = device.deviceId;
-                const label = device.label.toLowerCase();
+                option.text = device.label || `鏡頭 ${index + 1}`;
                 
-                // 💡 優先尋找前置鏡頭關鍵字
-                let isFront = label.includes('front') || label.includes('user') || label.includes('前');
-                option.text = device.label ? device.label : `鏡頭 ${index + 1}`;
-                
-                if (isFront && !defaultDeviceId) {
-                    defaultDeviceId = device.deviceId;
+                const labelLower = device.label.toLowerCase();
+                // 優先選擇前置鏡頭作為預設
+                if (labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前') || (index === 0 && !defaultDeviceId)) {
+                    if (!defaultDeviceId || labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前')) {
+                        defaultDeviceId = device.deviceId;
+                    }
                 }
+                cameraSelect.appendChild(option);
             });
 
-            if (!defaultDeviceId && videoDevices.length > 0) defaultDeviceId = videoDevices[0].deviceId;
-            if (defaultDeviceId) cameraSelect.value = defaultDeviceId;
+            if (!defaultDeviceId && videoDevices.length > 0) {
+                defaultDeviceId = videoDevices[0].deviceId;
+            }
+
+            if (defaultDeviceId) {
+                cameraSelect.value = defaultDeviceId;
+            }
 
             await startCamera(cameraSelect.value);
 
             cameraSelect.addEventListener('change', async (e) => {
                 await startCamera(e.target.value);
             });
+
         } catch (err) {
             console.error('無法讀取鏡頭列表:', err);
             cameraSelect.innerHTML = '<option value="">無法存取相機權限</option>';
@@ -176,9 +182,11 @@
     async function startCamera(deviceId) {
         const video = document.getElementById('cam-video');
         const canvas = document.getElementById('overlay-canvas');
-        if (currentStream) currentStream.getTracks().forEach(track => track.stop());
+        
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
 
-        // 💡 預設 constraints 改為 facingMode: "user"
         const constraints = {
             video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } } 
                             : { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
@@ -188,11 +196,11 @@
             currentStream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = currentStream;
             activeVideoTrack = currentStream.getVideoTracks()[0];
-            
+
+            // 動態判斷前後鏡頭：前置鏡頭鏡像翻轉，後置鏡頭保持正常方向
             const label = activeVideoTrack.label.toLowerCase();
-            const isFront = label.includes('front') || label.includes('user') || label.includes('前') || !label;
-            
-            // 前置鏡頭自動鏡像翻轉
+            const isFront = label.includes('front') || label.includes('user') || label.includes('前') || (!label && deviceId === '');
+
             if (isFront) {
                 video.style.transform = 'scaleX(-1)';
                 canvas.style.transform = 'scaleX(-1)';
@@ -201,7 +209,9 @@
                 canvas.style.transform = 'none';
             }
 
-            video.onplay = () => onVideoPlay();
+            video.onplay = () => {
+                onVideoPlay();
+            };
         } catch (err) {
             console.error('啟動鏡頭失敗:', err);
             alert('無法啟動所選鏡頭！');
@@ -220,11 +230,11 @@
             const displaySize = { width: video.clientWidth, height: video.clientHeight };
             faceapi.matchDimensions(canvas, displaySize);
 
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
             const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
             const resizedDetections = faceapi.resizeResults(detections, displaySize);
+
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             resizedDetections.forEach(detection => {
                 const match = faceMatcher.findBestMatch(detection.descriptor);
@@ -233,7 +243,6 @@
                 if (match.label !== 'unknown') {
                     const drawBox = new faceapi.draw.DrawBox(box, { label: `✅ ${match.label}`, boxColor: '#4caf50' });
                     drawBox.draw(canvas);
-
                     sendTriggerToHub(match.label);
                 } else {
                     const drawBox = new faceapi.draw.DrawBox(box, { label: '未登記', boxColor: '#f44336' });
