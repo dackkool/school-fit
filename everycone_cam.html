@@ -130,7 +130,7 @@
     async function initCameraDevices() {
         const cameraSelect = document.getElementById('camera-select');
         try {
-            const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
             tempStream.getTracks().forEach(track => track.stop());
 
             const devices = await navigator.mediaDevices.enumerateDevices();
