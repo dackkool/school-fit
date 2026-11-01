@@ -14,9 +14,15 @@
         body { margin: 0; padding: 10px; background-color: #111; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
         #container { width: 100%; max-width: 500px; text-align: center; }
         #badge { background-color: #ff9800; padding: 8px 16px; border-radius: 20px; font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; display: inline-block; }
-        .video-wrapper { position: relative; width: 100%; max-height: 55vh; border-radius: 16px; overflow: hidden; border: 3px solid #ff9800; background: #000; }
         
-        /* 🚀 採用前置鏡頭與水平鏡像翻轉 */
+        /* 鏡頭選擇選單樣式 */
+        .camera-select-group { margin-bottom: 10px; text-align: left; }
+        .camera-select-group label { font-size: 0.85rem; color: #ff9800; font-weight: bold; display: block; margin-bottom: 3px; }
+        .camera-select-group select { width: 100%; padding: 6px 10px; font-size: 0.9rem; border-radius: 8px; border: 1.5px solid #ff9800; background: #222; color: white; }
+
+        .video-wrapper { position: relative; width: 100%; max-height: 50vh; border-radius: 16px; overflow: hidden; border: 3px solid #ff9800; background: #000; }
+        
+        /* 採用水平鏡像翻轉 */
         video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
         
@@ -27,6 +33,15 @@
 
 <div id="container">
     <div id="badge">📷 正在載入分站...</div>
+    
+    <!-- 鏡頭選擇選單 -->
+    <div class="camera-select-group">
+        <label>選擇相機鏡頭：</label>
+        <select id="camera-select">
+            <option value="">正在偵測可用鏡頭...</option>
+        </select>
+    </div>
+
     <div class="video-wrapper">
         <video id="cam-video" autoplay muted playsinline></video>
         <canvas id="overlay-canvas"></canvas>
@@ -35,14 +50,15 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
     let supabaseChannel = null;
     let faceMatcher = null;
-    let studentLastTrigger = {}; // 記錄每個學生上次在該站觸發的時間，避免站著不動一直重複洗版
+    let studentLastTrigger = {}; 
+    let currentStream = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -51,7 +67,7 @@
 
         initTrackpointRealtime();
         await loadModelsAndStudentFaceDB();
-        startFrontCamera(); // 呼叫前置鏡頭
+        await initCameraDevices(); // 初始化相機並選擇裝置
     });
 
     async function loadModelsAndStudentFaceDB() {
@@ -61,7 +77,6 @@
             await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
             await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
 
-            // 從 Supabase 載入有 face_encoding 的學生資料
             const { data, error } = await supabaseClient
                 .from('students_db')
                 .select('student_id, name, face_encoding')
@@ -86,7 +101,7 @@
 
             if (labeledDescriptors.length > 0) {
                 faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
-                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！前置相機就緒...`;
+                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！相機就緒...`;
             }
         } catch (err) {
             console.error(err);
@@ -109,22 +124,76 @@
         });
     }
 
-    // 🚀 強制使用前置鏡頭 (User / Selfie)
-    async function startFrontCamera() {
-        const video = document.getElementById('cam-video');
+    // 🚀 自動偵測所有可用鏡頭（預設選取前置鏡頭）
+    async function initCameraDevices() {
+        const cameraSelect = document.getElementById('camera-select');
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                    facingMode: "user", // 指定前置鏡頭
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
-                } 
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            tempStream.getTracks().forEach(track => track.stop());
+
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+            cameraSelect.innerHTML = '';
+            if (videoDevices.length === 0) {
+                cameraSelect.innerHTML = '<option value="">找不到可用鏡頭</option>';
+                startCamera(null);
+                return;
+            }
+
+            let defaultDeviceId = null;
+            videoDevices.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `鏡頭 ${index + 1}`;
+                
+                const labelLower = device.label.toLowerCase();
+                if (labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前') || index === 0) {
+                    if (!defaultDeviceId || labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前')) {
+                        defaultDeviceId = device.deviceId;
+                    }
+                }
+                cameraSelect.appendChild(option);
             });
-            video.srcObject = stream;
-            video.addEventListener('play', onVideoPlay);
+
+            if (defaultDeviceId) {
+                cameraSelect.value = defaultDeviceId;
+            }
+
+            await startCamera(cameraSelect.value);
+
+            cameraSelect.addEventListener('change', async (e) => {
+                await startCamera(e.target.value);
+            });
+
         } catch (err) {
-            alert('無法存取前置相機，請檢查瀏覽器相機權限！');
-            console.error(err);
+            console.error('無法讀取鏡頭列表:', err);
+            cameraSelect.innerHTML = '<option value="">無法存取相機權限</option>';
+            await startCamera(null);
+        }
+    }
+
+    // 🚀 啟動指定鏡頭
+    async function startCamera(deviceId) {
+        const video = document.getElementById('cam-video');
+        
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+
+        const constraints = {
+            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } } : { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
+        };
+
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = currentStream;
+            video.onplay = () => {
+                onVideoPlay();
+            };
+        } catch (err) {
+            console.error('啟動鏡頭失敗:', err);
+            alert('無法啟動所選鏡頭！');
         }
     }
 
@@ -132,7 +201,10 @@
         const video = document.getElementById('cam-video');
         const canvas = document.getElementById('overlay-canvas');
 
-        setInterval(async () => {
+        if (window.detectionInterval) clearInterval(window.detectionInterval);
+
+        // 💡 可以在這裡調教 FPS (例如 200ms = 5 FPS)
+        window.detectionInterval = setInterval(async () => {
             if (!faceMatcher || video.paused || video.ended) return;
 
             const displaySize = { width: video.clientWidth, height: video.clientHeight };
@@ -157,12 +229,11 @@
                     drawBox.draw(canvas);
                 }
             });
-        }, 600);
+        }, 200); // 👈 200ms = 5 FPS (適合捕捉衝刺)
     }
 
     function sendTriggerToHub(studentId) {
         const now = Date.now();
-        // 🔒 增加冷卻時間至 6 秒，防止同一個學生站在鏡頭前時一直重複觸發送訊號
         if (studentLastTrigger[studentId] && (now - studentLastTrigger[studentId] < 6000)) return;
         studentLastTrigger[studentId] = now;
 
