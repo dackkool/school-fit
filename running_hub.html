@@ -73,7 +73,7 @@
     <div id="tab-monitor" class="tab-content active">
         <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
             <div style="flex: 1;">
-                <label style="font-size: 0.85rem; font-weight: bold;">當前測驗學生學號 (已鎖定)：</label>
+                <label style="font-size: 0.85rem; font-weight: bold;">當前測驗學生學號：</label>
                 <input type="text" id="active-student-id" readonly placeholder="尚未登入" style="padding: 6px; width: 100%; border-radius: 6px;">
             </div>
             <div>
@@ -141,12 +141,12 @@
         </div>
         <div id="model-status" style="text-align: center; font-size: 0.8rem; color: #ff9800; margin-bottom: 8px;">🔄 正在載入 AI 人臉模型...</div>
         <div class="input-group">
-            <label>學生學號 (已鎖定)：</label>
+            <label>學生學號：</label>
             <input type="text" id="reg-id" readonly placeholder="尚未登入" style="background-color: #f0f0f0;">
         </div>
         <div class="input-group">
             <label>學生姓名：</label>
-            <input type="text" id="reg-name" placeholder="例如: 陳小明">
+            <input type="text" id="reg-name" readonly placeholder="例如: 陳小明">
         </div>
         <button class="btn-primary" id="capture-btn" onclick="captureAndRegisterFace()" disabled>📷 正對鏡頭：擷取樣貌並儲存特徵</button>
     </div>
