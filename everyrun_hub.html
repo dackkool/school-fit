@@ -50,7 +50,7 @@
 
 <div id="main-card">
     <h1>全班智慧跑圈統籌主機 (EveryRun Hub)</h1>
-    <div class="subtitle">獨立賽事現場統計・多站順序驗證・即時排行榜與 CSV 匯出</div>
+    <div class="subtitle">獨立賽事現場統計・多站順序驗證・即時排行榜與 CSV 匯出 <span id="session-badge" style="color: #d32f2f; font-weight: bold;"></span></div>
 
     <div class="status-grid" id="status-grid-container"></div>
 
@@ -118,20 +118,23 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR_SUPA_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
     let trackpointHeartbeats = {};
     let studentNameMap = {}; // 學號對應姓名的快取
 
+    // 🔑 產生唯一賽事 Session ID (確保多場同時舉行互不干擾)
+    const raceSessionId = 'race_' + Math.random().toString(36).substring(2, 9);
+
     // 🏆 本次獨立賽事專用數據結構 (純記憶體運行)
-    // 結構: { 'S001': { expectedCp: 1, lapStartTime: null, completedLaps: 0, totalDuration: 0, lapDetails: [] } }
     let liveRaceData = {};
     let calculatedRankings = []; // 儲存最終結算清單用作 CSV 匯出
 
     window.addEventListener('DOMContentLoaded', async () => {
+        document.getElementById('session-badge').innerText = `[賽事房號: ${raceSessionId}]`;
         updateStatusGrid();
         generateQRCodes();
         initHubRealtime();
@@ -162,7 +165,8 @@
     }
 
     function initHubRealtime() {
-        supabaseChannel = supabaseClient.channel('school_running_room', { config: { broadcast: { self: true } } });
+        // 🔒 將 Realtime 頻道綁定 raceSessionId，實現多賽事隔離
+        supabaseChannel = supabaseClient.channel(`school_running_room_${raceSessionId}`, { config: { broadcast: { self: true } } });
         supabaseChannel
             .on('broadcast', { event: 'heartbeat' }, payload => { 
                 trackpointHeartbeats[payload.payload.checkpoint_id] = Date.now(); 
@@ -229,21 +233,23 @@
         }
     }
 
-    // 🏆 計算與渲染本次獨立賽事排行榜
+    // 🏆 計算與渲染本次獨立賽事排行榜（只顯示有被偵測到的參加者，即 completedLaps > 0）
     function renderCurrentRaceRanking() {
         const tbody = document.getElementById('ranking-tbody');
         const summary = document.getElementById('ranking-summary');
 
-        const studentIds = Object.keys(liveRaceData);
-        if (studentIds.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" style="color: #888; padding: 20px;">賽事進行中，尚未有學生通過檢查點</td></tr>`;
-            summary.innerHTML = `🏁 比賽結算：暫無參賽記錄。`;
+        // 過濾出至少完成 1 圈（有被偵測到過點）的參賽者
+        const activeStudentIds = Object.keys(liveRaceData).filter(id => liveRaceData[id].completedLaps > 0);
+
+        if (activeStudentIds.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="color: #888; padding: 20px;">賽事進行中，尚無有成績的參賽記錄</td></tr>`;
+            summary.innerHTML = `🏁 比賽結算：暫無有效成績記錄。`;
             calculatedRankings = [];
             return;
         }
 
         // 轉換為陣列並進行排序 (完成圈數多者優先；若圈數相同，則總時間少者優先)
-        calculatedRankings = studentIds.map(id => {
+        calculatedRankings = activeStudentIds.map(id => {
             const data = liveRaceData[id];
             const name = studentNameMap[id] || '未命名';
             const avgSpeed = data.completedLaps > 0 ? (data.totalDuration / data.completedLaps).toFixed(2) : '0.00';
@@ -273,13 +279,13 @@
             `;
         });
 
-        summary.innerHTML = `🏁 <b>本次比賽已結算：</b> 共 ${calculatedRankings.length} 名參賽學生已統計完畢！`;
+        summary.innerHTML = `🏁 <b>本次比賽已結算：</b> 共 ${calculatedRankings.length} 名有成績的學生已統計完畢！`;
     }
 
     // 📥 將排行榜匯出為 .CSV 檔案
     function exportToCSV() {
         if (calculatedRankings.length === 0) {
-            alert('尚無比賽排名數據可匯出！');
+            alert('尚無有效比賽排名數據可匯出！');
             return;
         }
 
@@ -296,7 +302,7 @@
         
         const today = new Date().toISOString().slice(0, 10);
         link.setAttribute("href", url);
-        link.setAttribute("download", `EveryRun_Race_Results_${today}.csv`);
+        link.setAttribute("download", `EveryRun_Race_${raceSessionId}_${today}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -343,6 +349,7 @@
         }
     }
 
+    // 📱 生成附帶 session 參數的 QR Code 網址
     function generateQRCodes() {
         const count = parseInt(document.getElementById('cp-count-select').value);
         const container = document.getElementById('qr-container');
@@ -350,13 +357,14 @@
         const baseUrl = window.location.origin + window.location.pathname.replace('everyrun_hub.html', 'everyrun_cam.html');
         
         for (let i = 1; i <= count; i++) {
-            const targetUrl = `${baseUrl}?role=cp${i}`;
+            // 🔗 網址自動帶入 role 與 session 參數
+            const targetUrl = `${baseUrl}?role=cp${i}&session=${raceSessionId}`;
             const box = document.createElement('div');
             box.className = 'qr-box';
             box.innerHTML = `
                 <p style="margin: 0; font-weight: bold; color: #1565c0; font-size: 0.8rem;">${i === 1 ? 'CP1 (起終點)' : `CP${i}`}</p>
                 <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(targetUrl)}" alt="CP${i} QR">
-                <p style="margin: 0; font-size: 0.65rem; color: #666; word-break: break-all;">?role=cp${i}</p>
+                <p style="margin: 0; font-size: 0.60rem; color: #666; word-break: break-all;">?role=cp${i}&session=...</p>
             `;
             container.appendChild(box);
         }
