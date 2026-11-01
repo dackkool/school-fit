@@ -21,7 +21,6 @@
 
         .video-wrapper { position: relative; width: 100%; max-height: 55vh; border-radius: 16px; overflow: hidden; border: 3px solid #4caf50; background: #000; display: flex; justify-content: center; align-items: center; }
         
-        /* 移除固定 scaleX(-1)，改由 JS 動態控制 */
         video { width: 100%; height: 100%; object-fit: contain; }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
 
@@ -49,8 +48,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
@@ -66,7 +65,7 @@
         role = urlParams.get('role') || 'cp1';
         sessionId = urlParams.get('session') || 'default';
         
-        document.getElementById('badge').innerText = `📡 分站相機：${role.toUpperCase()} (鏡頭方向修正版)`;
+        document.getElementById('badge').innerText = `📡 分站相機：${role.toUpperCase()} (預設前置鏡頭)`;
 
         initTrackpointRealtime();
         await loadModelsAndStudentFaceDB();
@@ -104,7 +103,7 @@
 
             if (labeledDescriptors.length > 0) {
                 faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
-                document.getElementById('status-text').innerText = `✅ 相機就緒！後置鏡頭方向已修正。`;
+                document.getElementById('status-text').innerText = `✅ 相機就緒！預設使用前置鏡頭。`;
             }
         } catch (err) {
             console.error(err);
@@ -130,6 +129,7 @@
     async function initCameraDevices() {
         const cameraSelect = document.getElementById('camera-select');
         try {
+            // 💡 預設改為請求前置鏡頭 (user)
             const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
             tempStream.getTracks().forEach(track => track.stop());
 
@@ -143,24 +143,23 @@
                 return;
             }
 
-            let bestDeviceId = null;
+            let defaultDeviceId = null;
             videoDevices.forEach((device, index) => {
                 const option = document.createElement('option');
                 option.value = device.deviceId;
                 const label = device.label.toLowerCase();
                 
-                let isBack = label.includes('back') || label.includes('rear') || label.includes('後');
+                // 💡 優先尋找前置鏡頭關鍵字
+                let isFront = label.includes('front') || label.includes('user') || label.includes('前');
                 option.text = device.label ? device.label : `鏡頭 ${index + 1}`;
                 
-                if (isBack && !bestDeviceId) {
-                    bestDeviceId = device.deviceId;
+                if (isFront && !defaultDeviceId) {
+                    defaultDeviceId = device.deviceId;
                 }
-
-                cameraSelect.appendChild(option);
             });
 
-            if (!bestDeviceId && videoDevices.length > 0) bestDeviceId = videoDevices[0].deviceId;
-            if (bestDeviceId) cameraSelect.value = bestDeviceId;
+            if (!defaultDeviceId && videoDevices.length > 0) defaultDeviceId = videoDevices[0].deviceId;
+            if (defaultDeviceId) cameraSelect.value = defaultDeviceId;
 
             await startCamera(cameraSelect.value);
 
@@ -179,9 +178,10 @@
         const canvas = document.getElementById('overlay-canvas');
         if (currentStream) currentStream.getTracks().forEach(track => track.stop());
 
+        // 💡 預設 constraints 改為 facingMode: "user"
         const constraints = {
             video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } } 
-                            : { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }
+                            : { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
         };
 
         try {
@@ -189,10 +189,10 @@
             video.srcObject = currentStream;
             activeVideoTrack = currentStream.getVideoTracks()[0];
             
-            // 動態判斷前後鏡頭：前置鏡頭鏡像翻轉，後置鏡頭保持正常方向
             const label = activeVideoTrack.label.toLowerCase();
-            const isFront = label.includes('front') || label.includes('user') || label.includes('前');
+            const isFront = label.includes('front') || label.includes('user') || label.includes('前') || !label;
             
+            // 前置鏡頭自動鏡像翻轉
             if (isFront) {
                 video.style.transform = 'scaleX(-1)';
                 canvas.style.transform = 'scaleX(-1)';
