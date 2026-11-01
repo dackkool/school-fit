@@ -14,7 +14,13 @@
         body { margin: 0; padding: 10px; background-color: #111; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
         #container { width: 100%; max-width: 500px; text-align: center; }
         #badge { background-color: #ff9800; padding: 8px 16px; border-radius: 20px; font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; display: inline-block; }
-        .video-wrapper { position: relative; width: 100%; max-height: 55vh; border-radius: 16px; overflow: hidden; border: 3px solid #ff9800; background: #000; }
+        
+        /* 鏡頭選擇選單樣式 */
+        .camera-select-group { margin-bottom: 10px; text-align: left; }
+        .camera-select-group label { font-size: 0.85rem; color: #ff9800; font-weight: bold; display: block; margin-bottom: 3px; }
+        .camera-select-group select { width: 100%; padding: 6px 10px; font-size: 0.9rem; border-radius: 8px; border: 1.5px solid #ff9800; background: #222; color: white; }
+
+        .video-wrapper { position: relative; width: 100%; max-height: 50vh; border-radius: 16px; overflow: hidden; border: 3px solid #ff9800; background: #000; }
         video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); /* 前置鏡頭水平翻轉，鏡像顯示較自然 */ }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); /* 同步翻轉 Canvas 標框 */ }
         #status-text { margin-top: 15px; font-size: 0.95rem; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; }
@@ -24,6 +30,15 @@
 
 <div id="container">
     <div id="badge">📷 正在載入分站...</div>
+    
+    <!-- 鏡頭選擇選單 -->
+    <div class="camera-select-group">
+        <label>選擇相機鏡頭：</label>
+        <select id="camera-select">
+            <option value="">正在偵測可用鏡頭...</option>
+        </select>
+    </div>
+
     <div class="video-wrapper">
         <video id="cam-video" autoplay muted playsinline></video>
         <canvas id="overlay-canvas"></canvas>
@@ -32,14 +47,15 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
     let supabaseChannel = null;
     let lastSendTime = 0;
     let faceMatcher = null;
+    let currentStream = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -48,7 +64,7 @@
 
         initTrackpointRealtime();
         await loadModelsAndStudentFaceDB();
-        startFrontCamera(); // 呼叫前置鏡頭
+        await initCameraDevices(); // 初始化並自動抓取可用鏡頭
     });
 
     async function loadModelsAndStudentFaceDB() {
@@ -82,7 +98,7 @@
 
             if (labeledDescriptors.length > 0) {
                 faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
-                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！前置相機就緒，請看鏡頭...`;
+                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！相機就緒，請看鏡頭...`;
             }
         } catch (err) {
             console.error(err);
@@ -105,23 +121,82 @@
         });
     }
 
-    // 🚀 使用前置鏡頭 (User / Selfie)
-    async function startFrontCamera() {
-        const video = document.getElementById('cam-video');
+    // 🚀 自動偵測裝置中所有可用鏡頭，預設選取前置鏡頭並填入選單
+    async function initCameraDevices() {
+        const cameraSelect = document.getElementById('camera-select');
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                    facingMode: "user", // 指定使用前置鏡頭
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
-                } 
+            // 先取得一次權限以解鎖裝置完整名稱
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            tempStream.getTracks().forEach(track => track.stop());
+
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+            cameraSelect.innerHTML = '';
+            if (videoDevices.length === 0) {
+                cameraSelect.innerHTML = '<option value="">找不到可用鏡頭</option>';
+                startCamera(null);
+                return;
+            }
+
+            let defaultDeviceId = null;
+            videoDevices.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `鏡頭 ${index + 1}`;
+                
+                // 優先自動尋找包含 "front"、"user" 或 "前置" 的鏡頭作為預設值
+                const labelLower = device.label.toLowerCase();
+                if (labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前') || index === 0) {
+                    if (!defaultDeviceId || labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前')) {
+                        defaultDeviceId = device.deviceId;
+                    }
+                }
+                cameraSelect.appendChild(option);
             });
 
-            video.srcObject = stream;
-            video.addEventListener('play', onVideoPlay);
+            if (defaultDeviceId) {
+                cameraSelect.value = defaultDeviceId;
+            }
+
+            // 啟動預設鏡頭
+            await startCamera(cameraSelect.value);
+
+            // 監聽下拉選單切換事件
+            cameraSelect.addEventListener('change', async (e) => {
+                await startCamera(e.target.value);
+            });
+
         } catch (err) {
-            alert('無法存取前置相機，請檢查瀏覽器相機權限！');
-            console.error(err);
+            console.error('無法讀取鏡頭列表:', err);
+            cameraSelect.innerHTML = '<option value="">無法存取相機權限</option>';
+            await startCamera(null); // Fallback 預設啟動
+        }
+    }
+
+    // 🚀 啟動指定的鏡頭裝置
+    async function startCamera(deviceId) {
+        const video = document.getElementById('cam-video');
+        
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+
+        const constraints = {
+            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } } : { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
+        };
+
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = currentStream;
+            
+            // 確保事件只綁定一次或重新啟動監聽
+            video.onplay = () => {
+                onVideoPlay();
+            };
+        } catch (err) {
+            console.error('啟動鏡頭失敗:', err);
+            alert('無法啟動所選鏡頭，請檢查權限或裝置是否被佔用！');
         }
     }
 
@@ -129,7 +204,10 @@
         const video = document.getElementById('cam-video');
         const canvas = document.getElementById('overlay-canvas');
 
-        setInterval(async () => {
+        // 清除舊的偵測 interval 避免疊加
+        if (window.detectionInterval) clearInterval(window.detectionInterval);
+
+        window.detectionInterval = setInterval(async () => {
             if (!faceMatcher || video.paused || video.ended) return;
 
             const displaySize = { width: video.clientWidth, height: video.clientHeight };
