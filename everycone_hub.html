@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>全班智慧錐桶計分主機 | EveryCone Hub</title>
-    <!-- Supabase JS 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <style>
@@ -50,17 +49,17 @@
 
 <div id="main-card">
     <h1>全班智慧錐桶計分主機 (EveryCone Hub)</h1>
-    <div class="subtitle">任意起點・多錐桶過點累計・限時賽事實況與排行榜 <span id="session-badge" style="color: #2e7d32; font-weight: bold;"></span></div>
+    <div class="subtitle">純相機多點追蹤・即時小數點賽事與排行榜 <span id="session-badge" style="color: #2e7d32; font-weight: bold;"></span></div>
 
     <div class="status-grid" id="status-grid-container"></div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('monitor')">⚡ 賽事實況與限時控制</button>
-        <button class="tab-btn" onclick="switchTab('qr')">📱 生成錐桶分機 QR (2-8)</button>
+        <button class="tab-btn" onclick="switchTab('qr')">📱 生成分機 QR (2-8)</button>
         <button class="tab-btn" onclick="switchTab('ranking')">🏆 本次比賽排行榜 & 匯出</button>
     </div>
 
-    <!-- TAB 1: 賽事實況與限時控制 -->
+    <!-- TAB 1 -->
     <div id="tab-monitor" class="tab-content active">
         <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center; background: #f1f8e9; padding: 10px; border-radius: 10px;">
             <div style="flex: 1;">
@@ -81,7 +80,7 @@
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <strong>📡 錐桶過點實況廣播：</strong>
+            <strong>📡 實況廣播：</strong>
             <span id="match-status-badge" style="color: #666; font-size: 0.85rem; font-weight: bold;">狀態：等待開始</span>
         </div>
         <div id="live-log">
@@ -89,10 +88,10 @@
         </div>
     </div>
 
-    <!-- TAB 2: 生成分機 QR Code -->
+    <!-- TAB 2 -->
     <div id="tab-qr" class="tab-content" style="display: none;">
         <div class="input-group">
-            <label>選擇總錐桶/分站數量 (2 至 8 個)：</label>
+            <label>選擇總相機/分站數量 (2 至 8 個)：</label>
             <select id="cp-count-select" onchange="generateQRCodes(); updateStatusGrid();">
                 <option value="2">2 個檢查點 (CP1, CP2)</option>
                 <option value="3">3 個檢查點 (CP1, CP2, CP3)</option>
@@ -106,7 +105,7 @@
         <div class="qr-grid" id="qr-container"></div>
     </div>
 
-    <!-- TAB 3: 本次比賽排行榜 & CSV 匯出 -->
+    <!-- TAB 3 -->
     <div id="tab-ranking" class="tab-content" style="display: none;">
         <div style="display: flex; gap: 10px; margin-bottom: 10px;">
             <button class="btn-primary" onclick="renderCurrentRaceRanking()" style="flex: 1; background-color: #2e7d32; margin: 0;">📊 即時更新排行榜</button>
@@ -122,8 +121,8 @@
                         <th>名次</th>
                         <th>學生學號</th>
                         <th>學生姓名</th>
-                        <th>完成圈數</th>
-                        <th>當前追蹤進度 (Track Point)</th>
+                        <th>當前總圈數 (含進度)</th>
+                        <th>詳細通過站點</th>
                     </tr>
                 </thead>
                 <tbody id="ranking-tbody">
@@ -135,19 +134,17 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
     let trackpointHeartbeats = {};
     let studentNameMap = {}; 
-
     const raceSessionId = 'cone_' + Math.random().toString(36).substring(2, 9);
 
     let liveConeData = {};
     let calculatedRankings = []; 
-
     let matchTimerInterval = null;
     let matchTimeRemaining = 0;
     let isMatchRunning = false;
@@ -164,30 +161,24 @@
             if (data) {
                 data.forEach(s => { studentNameMap[s.student_id] = s.name; });
             }
-        } catch (e) { console.error("學生資料載入失敗", e); }
+        } catch (e) { console.error(e); }
     });
 
     function switchTab(tabName) {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => { c.classList.remove('active'); c.style.display = 'none'; });
-
         const tabs = { 'monitor': 0, 'qr': 1, 'ranking': 2 };
         document.querySelectorAll('.tab-btn')[tabs[tabName]].classList.add('active');
         const target = document.getElementById(`tab-${tabName}`);
         target.classList.add('active');
         target.style.display = 'flex';
-
-        if (tabName === 'ranking') {
-            renderCurrentRaceRanking();
-        }
+        if (tabName === 'ranking') renderCurrentRaceRanking();
     }
 
     function initHubRealtime() {
         supabaseChannel = supabaseClient.channel(`school_cone_room_${raceSessionId}`, { config: { broadcast: { self: true } } });
         supabaseChannel
-            .on('broadcast', { event: 'heartbeat' }, payload => { 
-                trackpointHeartbeats[payload.payload.checkpoint_id] = Date.now(); 
-            })
+            .on('broadcast', { event: 'heartbeat' }, payload => { trackpointHeartbeats[payload.payload.checkpoint_id] = Date.now(); })
             .on('broadcast', { event: 'checkpoint_trigger' }, payload => { 
                 if (isMatchRunning) {
                     handleConeTrigger(payload.payload.student_id, payload.payload.checkpoint_id, payload.payload.timestamp); 
@@ -215,18 +206,14 @@
         }
 
         const runner = liveConeData[studentId];
-
-        if (runner.lastCp === cpId) {
-            logBox.innerHTML = `<div class="log-item" style="color: #888;"><span>⚠️ 提示：${studentName} 停留在 <b>CP${cpId}</b>，未移動至下一站</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
-            return;
-        }
+        if (runner.lastCp === cpId) return;
 
         if (runner.lastCp === null || cpId === runner.nextExpectedCp) {
             runner.lastCp = cpId;
             runner.nextExpectedCp = (cpId % totalCps) + 1; 
             runner.streakCount++;
 
-            logBox.innerHTML = `<div class="log-item"><span>📍 <b>${studentName} (${studentId})</b> 通過 <b>CP${cpId}</b> (進度: ${runner.streakCount}/${totalCps})</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
+            logBox.innerHTML = `<div class="log-item"><span>📍 <b>${studentName} (${studentId})</b> 通過 <b>CP${cpId}</b> (進度: ${runner.streakCount}/${totalCps} 站)</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
 
             if (runner.streakCount >= totalCps) {
                 runner.completedLaps++;
@@ -241,33 +228,25 @@
         renderCurrentRaceRanking();
     }
 
-    // 🛑 點擊開始時強制檢查所有相機是否已在線
     function startOrResetMatch() {
         const totalCps = parseInt(document.getElementById('cp-count-select').value);
         const now = Date.now();
         let offlineList = [];
 
-        // 檢查每一個設定中的檢查點是否在線 (6秒內有收到心跳)
         for (let i = 1; i <= totalCps; i++) {
-            const lastHeartbeat = trackpointHeartbeats[i] || 0;
-            if (now - lastHeartbeat >= 6000) {
-                offlineList.push(`CP${i}`);
-            }
+            if (now - (trackpointHeartbeats[i] || 0) >= 6000) offlineList.push(`CP${i}`);
         }
 
-        // 如果有任何相機離線，阻止開始並彈出提示
         if (offlineList.length > 0) {
-            alert(`⚠️ 無法開始比賽！以下相機尚未上線或連線中斷：\n【 ${offlineList.join(', ')} 】\n\n請確保所有分站相機已開啟並掃描連線後再試一次！`);
+            alert(`⚠️ 無法開始比賽！以下相機尚未上線：\n【 ${offlineList.join(', ')} 】`);
             return;
         }
 
         const durationVal = parseFloat(document.getElementById('match-duration-select').value);
-        const durationText = durationVal < 1 ? "15秒" : `${durationVal}分鐘`;
-        
-        if (confirm(`確定要開始/重置 ${durationText} 賽事嗎？現有實況與排行榜將會歸零！`)) {
+        if (confirm(`確定要開始/重置賽事嗎？`)) {
             liveConeData = {};
             calculatedRankings = [];
-            document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #2e7d32; padding: 30px; font-weight: bold;">賽事已正式開始！所有相機已就緒，等待學生過點...</div>`;
+            document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #2e7d32; padding: 30px; font-weight: bold;">賽事已正式開始！</div>`;
             
             if (matchTimerInterval) clearInterval(matchTimerInterval);
             matchTimeRemaining = Math.round(durationVal * 60);
@@ -286,7 +265,6 @@
                     renderCurrentRaceRanking();
                 }
             }, 1000);
-
             renderCurrentRaceRanking();
         }
     }
@@ -297,11 +275,11 @@
         document.getElementById('timer-display').innerText = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
     }
 
+    // 🏆 純相機版小數點圈數計算
     function renderCurrentRaceRanking() {
         const tbody = document.getElementById('ranking-tbody');
         const summary = document.getElementById('ranking-summary');
         const totalCps = parseInt(document.getElementById('cp-count-select').value);
-
         const activeStudentIds = Object.keys(liveConeData).filter(id => liveConeData[id].hasRecord);
 
         if (activeStudentIds.length === 0) {
@@ -315,17 +293,20 @@
             const data = liveConeData[id];
             const name = studentNameMap[id] || '未命名';
             const progress = data.streakCount || 0;
+            
+            const exactScore = data.completedLaps + (progress / totalCps);
+            const formattedScore = exactScore.toFixed(2);
+
             return {
                 studentId: id,
                 name: name,
                 completedLaps: data.completedLaps,
                 progress: progress,
+                exactScore: exactScore,
+                scoreText: `${formattedScore} 圈`,
                 progressText: `${progress} / ${totalCps} 站`
             };
-        }).sort((a, b) => {
-            if (b.completedLaps !== a.completedLaps) return b.completedLaps - a.completedLaps;
-            return b.progress - a.progress; 
-        });
+        }).sort((a, b) => b.exactScore - a.exactScore);
 
         tbody.innerHTML = '';
         calculatedRankings.forEach((item, index) => {
@@ -334,35 +315,25 @@
                     <td><b>#${index + 1}</b></td>
                     <td>${item.studentId}</td>
                     <td>${item.name}</td>
-                    <td><span style="background: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 4px; font-weight: bold;">${item.completedLaps} 圈</span></td>
+                    <td><span style="background: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 1.05rem;">${item.scoreText}</span></td>
                     <td><b>${item.progressText}</b></td>
                 </tr>
             `;
         });
-
-        summary.innerHTML = `🏁 <b>賽事進行中：</b> 目前共 ${calculatedRankings.length} 名學生有過點成績！`;
+        summary.innerHTML = `🏁 <b>賽事進行中：</b> 共 ${calculatedRankings.length} 名學生有過點成績！`;
     }
 
     function exportToCSV() {
-        if (calculatedRankings.length === 0) {
-            alert('尚無比賽成績可匯出！');
-            return;
-        }
-
-        let csvContent = "\uFEFF"; 
-        csvContent += "名次,學生學號,學生姓名,完成圈數,當前追蹤進度\n";
-
+        if (calculatedRankings.length === 0) { alert('尚無成績可匯出！'); return; }
+        let csvContent = "\uFEFF名次,學生學號,學生姓名,總圈數評分,詳細通過站點\n";
         calculatedRankings.forEach((item, index) => {
-            csvContent += `${index + 1},"${item.studentId}","${item.name}",${item.completedLaps},"${item.progressText}"\n`;
+            csvContent += `${index + 1},"${item.studentId}","${item.name}","${item.scoreText}","${item.progressText}"\n`;
         });
-
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
-        
-        const today = new Date().toISOString().slice(0, 10);
         link.setAttribute("href", url);
-        link.setAttribute("download", `EveryCone_Race_${raceSessionId}_${today}.csv`);
+        link.setAttribute("download", `EveryCone_Race_${raceSessionId}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -373,12 +344,11 @@
         const grid = document.getElementById('status-grid-container');
         grid.innerHTML = '';
         grid.style.gridTemplateColumns = `repeat(${Math.min(count, 4)}, 1fr)`;
-
         for (let i = 1; i <= count; i++) {
             const card = document.createElement('div');
             card.className = 'status-card';
             card.id = `cp${i}-status`;
-            card.innerHTML = `<div class="status-title">${i === 1 ? '錐桶 1 (起終點)' : `錐桶 ${i}`}</div><div class="status-indicator">離線</div>`;
+            card.innerHTML = `<div class="status-title">相機 ${i}</div><div class="status-indicator">離線</div>`;
             grid.appendChild(card);
         }
     }
@@ -391,11 +361,9 @@
             if (!card) continue;
             const indicator = card.querySelector('.status-indicator');
             if (now - (trackpointHeartbeats[i] || 0) < 6000) {
-                card.classList.add('online');
-                indicator.innerText = '🟢 連線中';
+                card.classList.add('online'); indicator.innerText = '🟢 連線';
             } else {
-                card.classList.remove('online');
-                indicator.innerText = '🔴 離線';
+                card.classList.remove('online'); indicator.innerText = '🔴 離線';
             }
         }
     }
@@ -405,16 +373,11 @@
         const container = document.getElementById('qr-container');
         container.innerHTML = '';
         const baseUrl = window.location.origin + window.location.pathname.replace('everycone_hub.html', 'everycone_cam.html');
-        
         for (let i = 1; i <= count; i++) {
             const targetUrl = `${baseUrl}?role=cp${i}&session=${raceSessionId}`;
             const box = document.createElement('div');
             box.className = 'qr-box';
-            box.innerHTML = `
-                <p style="margin: 0; font-weight: bold; color: #2e7d32; font-size: 0.8rem;">${i === 1 ? 'CP1' : `CP${i}`}</p>
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(targetUrl)}" alt="CP${i} QR">
-                <p style="margin: 0; font-size: 0.60rem; color: #666; word-break: break-all;">?role=cp${i}&session=...</p>
-            `;
+            box.innerHTML = `<p style="margin: 0; font-weight: bold; color: #2e7d32; font-size: 0.8rem;">CP${i}</p><img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(targetUrl)}" alt="CP${i} QR">`;
             container.appendChild(box);
         }
     }
@@ -422,6 +385,5 @@
     const synth = window.speechSynthesis;
     const speak = (text) => { const utter = new SpeechSynthesisUtterance(text); utter.lang = 'zh-HK'; synth.cancel(); synth.speak(utter); };
 </script>
-
 </body>
 </html>
