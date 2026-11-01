@@ -177,29 +177,43 @@
     // 🚀 啟動指定的鏡頭裝置
     async function startCamera(deviceId) {
         const video = document.getElementById('cam-video');
-        
+        const canvas = document.getElementById('overlay-canvas');
+    
         if (currentStream) {
             currentStream.getTracks().forEach(track => track.stop());
         }
-
+    
         const constraints = {
-            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 480 }, height: { ideal: 360 } } : { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
+            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 480 }, height: { ideal: 360 } } 
+                            : { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 } }
         };
-
+    
         try {
             currentStream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = currentStream;
-            
-            // 確保事件只綁定一次或重新啟動監聽
+    
+            // 💡 動態判斷：如果是前置鏡頭才做鏡像翻轉，後置鏡頭保持正常
+            const track = currentStream.getVideoTracks()[0];
+            const label = track.label.toLowerCase();
+            const isFront = label.includes('front') || label.includes('user') || label.includes('前') || (!label && deviceId === '');
+    
+            if (isFront) {
+                video.style.transform = 'scaleX(-1)';
+                canvas.style.transform = 'scaleX(-1)';
+            } else {
+                video.style.transform = 'none';
+                canvas.style.transform = 'none';
+            }
+    
             video.onplay = () => {
                 onVideoPlay();
             };
         } catch (err) {
             console.error('啟動鏡頭失敗:', err);
-            alert('無法啟動所選鏡頭，請檢查權限或裝置是否被佔用！');
+            alert('無法啟動所選鏡頭！');
         }
     }
-
+    
     function onVideoPlay() {
         const video = document.getElementById('cam-video');
         const canvas = document.getElementById('overlay-canvas');
