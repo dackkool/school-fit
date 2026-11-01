@@ -19,13 +19,9 @@
         .camera-select-group label { font-size: 0.85rem; color: #4caf50; font-weight: bold; display: block; margin-bottom: 3px; }
         .camera-select-group select { width: 100%; padding: 6px 10px; font-size: 0.9rem; border-radius: 8px; border: 1.5px solid #4caf50; background: #222; color: white; }
 
-        .zoom-control-group { margin-bottom: 10px; text-align: left; background: #222; padding: 8px 12px; border-radius: 8px; border: 1px solid #333; display: none; }
-        .zoom-control-group label { font-size: 0.85rem; color: #ff9800; font-weight: bold; display: flex; justify-content: space-between; }
-        .zoom-control-group input[type=range] { width: 100%; margin-top: 5px; }
-
         .video-wrapper { position: relative; width: 100%; max-height: 55vh; border-radius: 16px; overflow: hidden; border: 3px solid #4caf50; background: #000; display: flex; justify-content: center; align-items: center; }
         
-        /* 移除固定的 scaleX(-1)，改由 JS 動態控制 */
+        /* 移除固定 scaleX(-1)，改由 JS 動態控制 */
         video { width: 100%; height: 100%; object-fit: contain; }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
 
@@ -44,11 +40,6 @@
         </select>
     </div>
 
-    <div class="zoom-control-group" id="zoom-container">
-        <label>🔍 光學數位縮放：<span id="zoom-value">1.0x</span></label>
-        <input type="range" id="zoom-slider" min="1" max="1" step="0.1" value="1">
-    </div>
-
     <div class="video-wrapper">
         <video id="cam-video" autoplay muted playsinline></video>
         <canvas id="overlay-canvas"></canvas>
@@ -58,8 +49,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
@@ -198,9 +189,7 @@
             video.srcObject = currentStream;
             activeVideoTrack = currentStream.getVideoTracks()[0];
             
-            setupZoomControls(activeVideoTrack);
-
-            // 動態判斷前後鏡頭：如果是前置才鏡像翻轉，後置鏡頭保持正常方向
+            // 動態判斷前後鏡頭：前置鏡頭鏡像翻轉，後置鏡頭保持正常方向
             const label = activeVideoTrack.label.toLowerCase();
             const isFront = label.includes('front') || label.includes('user') || label.includes('前');
             
@@ -216,37 +205,6 @@
         } catch (err) {
             console.error('啟動鏡頭失敗:', err);
             alert('無法啟動所選鏡頭！');
-        }
-    }
-
-    function setupZoomControls(track) {
-        const zoomContainer = document.getElementById('zoom-container');
-        const zoomSlider = document.getElementById('zoom-slider');
-        const zoomValueDisplay = document.getElementById('zoom-value');
-
-        if (!track || typeof track.getCapabilities !== 'function') {
-            zoomContainer.style.display = 'none';
-            return;
-        }
-
-        const capabilities = track.getCapabilities();
-        if (capabilities.zoom) {
-            zoomContainer.style.display = 'block';
-            zoomSlider.min = capabilities.zoom.min;
-            zoomSlider.max = capabilities.zoom.max;
-            zoomSlider.step = capabilities.zoom.step || 0.1;
-            
-            const settings = track.getSettings();
-            zoomSlider.value = settings.zoom || capabilities.zoom.min;
-            zoomValueDisplay.innerText = parseFloat(zoomSlider.value).toFixed(1) + 'x';
-
-            zoomSlider.oninput = (e) => {
-                const val = parseFloat(e.target.value);
-                zoomValueDisplay.innerText = val.toFixed(1) + 'x';
-                track.applyConstraints({ advanced: [{ zoom: val }] });
-            };
-        } else {
-            zoomContainer.style.display = 'none';
         }
     }
 
