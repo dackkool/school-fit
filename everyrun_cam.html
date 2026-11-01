@@ -50,11 +50,12 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
+    let sessionId = 'default';
     let supabaseChannel = null;
     let faceMatcher = null;
     let studentLastTrigger = {}; 
@@ -63,11 +64,13 @@
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
         role = urlParams.get('role') || 'cp1';
-        document.getElementById('badge').innerText = `📡 分站相機：${role.toUpperCase()}`;
+        sessionId = urlParams.get('session') || 'default';
+        
+        document.getElementById('badge').innerText = `📡 分站相機：${role.toUpperCase()} (房號連線中)`;
 
         initTrackpointRealtime();
         await loadModelsAndStudentFaceDB();
-        await initCameraDevices(); // 初始化相機並選擇裝置
+        await initCameraDevices();
     });
 
     async function loadModelsAndStudentFaceDB() {
@@ -109,8 +112,9 @@
         }
     }
 
+    // 🔒 根據網址中的 session 參數加入對應的獨立賽事頻道
     function initTrackpointRealtime() {
-        supabaseChannel = supabaseClient.channel('school_running_room', { config: { broadcast: { self: true } } });
+        supabaseChannel = supabaseClient.channel(`school_running_room_${sessionId}`, { config: { broadcast: { self: true } } });
         supabaseChannel.subscribe((status) => {
             if (status === 'SUBSCRIBED') {
                 setInterval(() => {
@@ -124,7 +128,6 @@
         });
     }
 
-    // 🚀 自動偵測所有可用鏡頭（預設選取前置鏡頭）
     async function initCameraDevices() {
         const cameraSelect = document.getElementById('camera-select');
         try {
@@ -173,7 +176,6 @@
         }
     }
 
-    // 🚀 啟動指定鏡頭
     async function startCamera(deviceId) {
         const video = document.getElementById('cam-video');
         
@@ -203,7 +205,7 @@
 
         if (window.detectionInterval) clearInterval(window.detectionInterval);
 
-        // 💡 可以在這裡調教 FPS (例如 200ms = 5 FPS)
+        // 5 FPS (200ms) 靈敏偵測衝刺
         window.detectionInterval = setInterval(async () => {
             if (!faceMatcher || video.paused || video.ended) return;
 
@@ -229,7 +231,7 @@
                     drawBox.draw(canvas);
                 }
             });
-        }, 200); // 👈 200ms = 5 FPS (適合捕捉衝刺)
+        }, 200);
     }
 
     function sendTriggerToHub(studentId) {
