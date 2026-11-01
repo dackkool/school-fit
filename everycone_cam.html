@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>錐桶分站人臉辨識相機 | EveryCone Cam</title>
+    <!-- face-api.js -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <!-- Supabase JS 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
+        body { margin: 0; padding: 10px; background-color: #111; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
+        #container { width: 100%; max-width: 500px; text-align: center; }
+        #badge { background-color: #4caf50; padding: 8px 16px; border-radius: 20px; font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; display: inline-block; }
+        
+        .camera-select-group { margin-bottom: 10px; text-align: left; }
+        .camera-select-group label { font-size: 0.85rem; color: #4caf50; font-weight: bold; display: block; margin-bottom: 3px; }
+        .camera-select-group select { width: 100%; padding: 6px 10px; font-size: 0.9rem; border-radius: 8px; border: 1.5px solid #4caf50; background: #222; color: white; }
+
+        .video-wrapper { position: relative; width: 100%; max-height: 50vh; border-radius: 16px; overflow: hidden; border: 3px solid #4caf50; background: #000; }
+        
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+        
+        #status-text { margin-top: 15px; font-size: 0.95rem; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <div id="badge">📷 正在載入錐桶分站...</div>
+    
+    <div class="camera-select-group">
+        <label>選擇相機鏡頭：</label>
+        <select id="camera-select">
+            <option value="">正在偵測可用鏡頭...</option>
+        </select>
+    </div>
+
+    <div class="video-wrapper">
+        <video id="cam-video" autoplay muted playsinline></video>
+        <canvas id="overlay-canvas"></canvas>
+    </div>
+    <div id="status-text">🔄 正在載入 AI 模型與學生人臉資料庫...</div>
+</div>
+
+<script>
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let role = 'cp1';
+    let sessionId = 'default';
+    let supabaseChannel = null;
+    let faceMatcher = null;
+    let studentLastTrigger = {}; 
+    let currentStream = null;
+
+    window.addEventListener('DOMContentLoaded', async () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        role = urlParams.get('role') || 'cp1';
+        sessionId = urlParams.get('session') || 'default';
+        
+        document.getElementById('badge').innerText = `📡 錐桶相機：${role.toUpperCase()} (房號連線中)`;
+
+        initTrackpointRealtime();
+        await loadModelsAndStudentFaceDB();
+        await initCameraDevices();
+    });
+
+    async function loadModelsAndStudentFaceDB() {
+        const MODEL_URL = './models';
+        try {
+            await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+
+            const { data, error } = await supabaseClient
+                .from('students_db')
+                .select('student_id, name, face_encoding')
+                .not('face_encoding', 'is', null);
+
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                document.getElementById('status-text').innerText = '⚠️ 雲端尚無學生人臉數據，請先在主機登記！';
+                return;
+            }
+
+            const labeledDescriptors = [];
+            data.forEach(student => {
+                if (student.face_encoding) {
+                    try {
+                        const arr = new Float32Array(JSON.parse(student.face_encoding));
+                        labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(student.student_id, [arr]));
+                    } catch (e) { console.error(e); }
+                }
+            });
+
+            if (labeledDescriptors.length > 0) {
+                faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
+                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！相機就緒...`;
+            }
+        } catch (err) {
+            console.error(err);
+            document.getElementById('status-text').innerText = '❌ 模型或人臉數據載入失敗！';
+        }
+    }
+
+    function initTrackpointRealtime() {
+        supabaseChannel = supabaseClient.channel(`school_cone_room_${sessionId}`, { config: { broadcast: { self: true } } });
+        supabaseChannel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                setInterval(() => {
+                    supabaseChannel.send({
+                        type: 'broadcast',
+                        event: 'heartbeat',
+                        payload: { checkpoint_id: parseInt(role.replace('cp', '')) }
+                    });
+                }, 3000);
+            }
+        });
+    }
+
+    async function initCameraDevices() {
+        const cameraSelect = document.getElementById('camera-select');
+        try {
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            tempStream.getTracks().forEach(track => track.stop());
+
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+            cameraSelect.innerHTML = '';
+            if (videoDevices.length === 0) {
+                cameraSelect.innerHTML = '<option value="">找不到可用鏡頭</option>';
+                startCamera(null);
+                return;
+            }
+
+            let defaultDeviceId = null;
+            videoDevices.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `鏡頭 ${index + 1}`;
+                
+                const labelLower = device.label.toLowerCase();
+                if (labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前') || index === 0) {
+                    if (!defaultDeviceId || labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前')) {
+                        defaultDeviceId = device.deviceId;
+                    }
+                }
+                cameraSelect.appendChild(option);
+            });
+
+            if (defaultDeviceId) {
+                cameraSelect.value = defaultDeviceId;
+            }
+
+            await startCamera(cameraSelect.value);
+
+            cameraSelect.addEventListener('change', async (e) => {
+                await startCamera(e.target.value);
+            });
+
+        } catch (err) {
+            console.error('無法讀取鏡頭列表:', err);
+            cameraSelect.innerHTML = '<option value="">無法存取相機權限</option>';
+            await startCamera(null);
+        }
+    }
+
+    async function startCamera(deviceId) {
+        const video = document.getElementById('cam-video');
+        
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+
+        const constraints = {
+            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 480 }, height: { ideal: 360 } } 
+                            : { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 } }
+        };
+
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = currentStream;
+            video.onplay = () => {
+                onVideoPlay();
+            };
+        } catch (err) {
+            console.error('啟動鏡頭失敗:', err);
+            alert('無法啟動所選鏡頭！');
+        }
+    }
+
+    function onVideoPlay() {
+        const video = document.getElementById('cam-video');
+        const canvas = document.getElementById('overlay-canvas');
+
+        if (window.detectionInterval) clearInterval(window.detectionInterval);
+
+        // 5 FPS (200ms) 靈敏偵測
+        window.detectionInterval = setInterval(async () => {
+            if (!faceMatcher || video.paused || video.ended) return;
+
+            const displaySize = { width: video.clientWidth, height: video.clientHeight };
+            faceapi.matchDimensions(canvas, displaySize);
+
+            const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+            const resizedDetections = faceapi.resizeResults(detections, displaySize);
+
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            resizedDetections.forEach(detection => {
+                const match = faceMatcher.findBestMatch(detection.descriptor);
+                const box = detection.detection.box;
+
+                if (match.label !== 'unknown') {
+                    const drawBox = new faceapi.draw.DrawBox(box, { label: `✅ ${match.label}`, boxColor: '#4caf50' });
+                    drawBox.draw(canvas);
+                    sendTriggerToHub(match.label);
+                } else {
+                    const drawBox = new faceapi.draw.DrawBox(box, { label: '未登記', boxColor: '#f44336' });
+                    drawBox.draw(canvas);
+                }
+            });
+        }, 200);
+    }
+
+    function sendTriggerToHub(studentId) {
+        const now = Date.now();
+        if (studentLastTrigger[studentId] && (now - studentLastTrigger[studentId] < 6000)) return;
+        studentLastTrigger[studentId] = now;
+
+        const cpId = parseInt(role.replace('cp', ''));
+
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'checkpoint_trigger',
+            payload: { student_id: studentId, checkpoint_id: cpId, timestamp: now }
+        });
+
+        document.getElementById('status-text').innerText = `🎉 已發送 [${role.toUpperCase()}] 過點：學生 ${studentId}`;
+    }
+</script>
+
+</body>
+</html>
