@@ -63,7 +63,7 @@
         role = urlParams.get('role') || 'cp1';
         sessionId = urlParams.get('session') || 'default';
         
-        document.getElementById('badge').innerText = `📡 錐桶相機：${role.toUpperCase()} (房號連線中)`;
+        document.getElementById('badge').innerText = `📡 錐桶相機：${role.toUpperCase()} (${sessionId}連線中)`;
 
         initTrackpointRealtime();
         await loadModelsAndStudentFaceDB();
