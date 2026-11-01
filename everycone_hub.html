@@ -66,7 +66,7 @@
             <div style="flex: 1;">
                 <label style="font-size: 0.85rem; font-weight: bold; color: #2e7d32;">選擇賽事時間長度：</label>
                 <select id="match-duration-select" style="padding: 6px; width: 100%; border-radius: 6px; border: 1px solid #c8e6c9;">
-                    <option value="0.1667">10 秒極速測試</option>
+                    <option value="0.25">15 秒極速測試</option>
                     <option value="6">6 分鐘耐力賽</option>
                     <option value="9">9 分鐘耐力賽</option>
                 </select>
@@ -243,7 +243,7 @@
 
     function startOrResetMatch() {
         const durationVal = parseFloat(document.getElementById('match-duration-select').value);
-        const durationText = durationVal < 1 ? "10秒" : `${durationVal}分鐘`;
+        const durationText = durationVal < 1 ? "15秒" : `${durationVal}分鐘`;
         
         if (confirm(`確定要開始/重置 ${durationText} 賽事嗎？現有實況與排行榜將會歸零！`)) {
             liveConeData = {};
