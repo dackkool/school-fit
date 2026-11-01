@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>錐桶分站人臉辨識相機 | EveryCone Cam</title>
+    <title>錐桶分站相機 | EveryCone Cam</title>
     <!-- face-api.js -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <!-- Supabase JS 庫 -->
@@ -19,36 +19,47 @@
         .camera-select-group label { font-size: 0.85rem; color: #4caf50; font-weight: bold; display: block; margin-bottom: 3px; }
         .camera-select-group select { width: 100%; padding: 6px 10px; font-size: 0.9rem; border-radius: 8px; border: 1.5px solid #4caf50; background: #222; color: white; }
 
-        .video-wrapper { position: relative; width: 100%; max-height: 50vh; border-radius: 16px; overflow: hidden; border: 3px solid #4caf50; background: #000; }
+        .zoom-control-group { margin-bottom: 10px; text-align: left; background: #222; padding: 8px 12px; border-radius: 8px; border: 1px solid #333; display: none; }
+        .zoom-control-group label { font-size: 0.85rem; color: #ff9800; font-weight: bold; display: flex; justify-content: space-between; }
+        .zoom-control-group input[type=range] { width: 100%; margin-top: 5px; }
+
+        .video-wrapper { position: relative; width: 100%; max-height: 55vh; border-radius: 16px; overflow: hidden; border: 3px solid #4caf50; background: #000; display: flex; justify-content: center; align-items: center; }
         
-        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
-        
+        /* 使用 contain 避免裁切廣角畫面邊緣 */
+        video { width: 100%; height: 100%; object-fit: contain; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+
         #status-text { margin-top: 15px; font-size: 0.95rem; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; }
     </style>
 </head>
 <body>
 
 <div id="container">
-    <div id="badge">📷 正在載入錐桶分站...</div>
+    <div id="badge">📷 正在載入錐桶分站相機...</div>
     
     <div class="camera-select-group">
-        <label>選擇相機鏡頭：</label>
+        <label>選擇相機鏡頭（優先調用後置超廣角）：</label>
         <select id="camera-select">
             <option value="">正在偵測可用鏡頭...</option>
         </select>
+    </div>
+
+    <div class="zoom-control-group" id="zoom-container">
+        <label>🔍 廣角 / 光學數位縮放：<span id="zoom-value">1.0x</span></label>
+        <input type="range" id="zoom-slider" min="1" max="1" step="0.1" value="1">
     </div>
 
     <div class="video-wrapper">
         <video id="cam-video" autoplay muted playsinline></video>
         <canvas id="overlay-canvas"></canvas>
     </div>
-    <div id="status-text">🔄 正在載入 AI 模型與學生人臉資料庫...</div>
+
+    <div id="status-text">🔄 正在載入 AI 模型與廣角鏡頭優化模組...</div>
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
@@ -57,13 +68,14 @@
     let faceMatcher = null;
     let studentLastTrigger = {}; 
     let currentStream = null;
+    let activeVideoTrack = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
         role = urlParams.get('role') || 'cp1';
         sessionId = urlParams.get('session') || 'default';
         
-        document.getElementById('badge').innerText = `📡 錐桶相機：${role.toUpperCase()} (${sessionId}連線中)`;
+        document.getElementById('badge').innerText = `📡 分站相機：${role.toUpperCase()} (超廣角優化版)`;
 
         initTrackpointRealtime();
         await loadModelsAndStudentFaceDB();
@@ -101,7 +113,7 @@
 
             if (labeledDescriptors.length > 0) {
                 faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
-                document.getElementById('status-text').innerText = `✅ 人臉庫已載入 (${labeledDescriptors.length} 人)！相機就緒...`;
+                document.getElementById('status-text').innerText = `✅ 相機就緒！請確認已啟用後置超廣角鏡頭。`;
             }
         } catch (err) {
             console.error(err);
@@ -127,7 +139,7 @@
     async function initCameraDevices() {
         const cameraSelect = document.getElementById('camera-select');
         try {
-            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             tempStream.getTracks().forEach(track => track.stop());
 
             const devices = await navigator.mediaDevices.enumerateDevices();
@@ -140,31 +152,34 @@
                 return;
             }
 
-            let defaultDeviceId = null;
+            let bestDeviceId = null;
             videoDevices.forEach((device, index) => {
                 const option = document.createElement('option');
                 option.value = device.deviceId;
-                option.text = device.label || `鏡頭 ${index + 1}`;
+                const label = device.label.toLowerCase();
                 
-                const labelLower = device.label.toLowerCase();
-                if (labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前') || index === 0) {
-                    if (!defaultDeviceId || labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前')) {
-                        defaultDeviceId = device.deviceId;
-                    }
+                let isUltraWide = label.includes('ultra') || label.includes('wide') || label.includes('0.5') || label.includes('廣角') || label.includes('back 0');
+                let isBack = label.includes('back') || label.includes('rear') || label.includes('後');
+
+                option.text = device.label ? `${device.label}${isUltraWide ? ' 🌟(廣角/Ultra-wide)' : ''}` : `鏡頭 ${index + 1}`;
+                
+                if (isUltraWide && !bestDeviceId) {
+                    bestDeviceId = device.deviceId;
+                } else if (isBack && !bestDeviceId) {
+                    bestDeviceId = device.deviceId;
                 }
+
                 cameraSelect.appendChild(option);
             });
 
-            if (defaultDeviceId) {
-                cameraSelect.value = defaultDeviceId;
-            }
+            if (!bestDeviceId && videoDevices.length > 0) bestDeviceId = videoDevices[videoDevices.length - 1].deviceId;
+            if (bestDeviceId) cameraSelect.value = bestDeviceId;
 
             await startCamera(cameraSelect.value);
 
             cameraSelect.addEventListener('change', async (e) => {
                 await startCamera(e.target.value);
             });
-
         } catch (err) {
             console.error('無法讀取鏡頭列表:', err);
             cameraSelect.innerHTML = '<option value="">無法存取相機權限</option>';
@@ -174,25 +189,60 @@
 
     async function startCamera(deviceId) {
         const video = document.getElementById('cam-video');
-        
-        if (currentStream) {
-            currentStream.getTracks().forEach(track => track.stop());
-        }
+        if (currentStream) currentStream.getTracks().forEach(track => track.stop());
 
         const constraints = {
-            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 480 }, height: { ideal: 360 } } 
-                            : { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 } }
+            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } } 
+                            : { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }
         };
 
         try {
             currentStream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = currentStream;
-            video.onplay = () => {
-                onVideoPlay();
-            };
+            activeVideoTrack = currentStream.getVideoTracks()[0];
+            
+            setupZoomControls(activeVideoTrack);
+
+            const label = activeVideoTrack.label.toLowerCase();
+            const isFront = label.includes('front') || label.includes('user') || label.includes('前');
+            video.style.transform = isFront ? 'scaleX(-1)' : 'none';
+            document.getElementById('overlay-canvas').style.transform = isFront ? 'scaleX(-1)' : 'none';
+
+            video.onplay = () => onVideoPlay();
         } catch (err) {
             console.error('啟動鏡頭失敗:', err);
             alert('無法啟動所選鏡頭！');
+        }
+    }
+
+    function setupZoomControls(track) {
+        const zoomContainer = document.getElementById('zoom-container');
+        const zoomSlider = document.getElementById('zoom-slider');
+        const zoomValueDisplay = document.getElementById('zoom-value');
+
+        if (!track || typeof track.getCapabilities !== 'function') {
+            zoomContainer.style.display = 'none';
+            return;
+        }
+
+        const capabilities = track.getCapabilities();
+        if (capabilities.zoom) {
+            zoomContainer.style.display = 'block';
+            zoomSlider.min = capabilities.zoom.min;
+            zoomSlider.max = capabilities.zoom.max;
+            zoomSlider.step = capabilities.zoom.step || 0.1;
+            
+            const settings = track.getSettings();
+            zoomSlider.value = settings.zoom || capabilities.zoom.min;
+            zoomValueDisplay.innerText = parseFloat(zoomSlider.value).toFixed(1) + 'x';
+
+            zoomSlider.oninput = (e) => {
+                const val = parseFloat(e.target.value);
+                zoomValueDisplay.innerText = val.toFixed(1) + 'x';
+                track.applyConstraints({ advanced: [{ zoom: val }] });
+            };
+        } else {
+            zoomContainer.style.display = 'none';
         }
     }
 
@@ -202,18 +252,17 @@
 
         if (window.detectionInterval) clearInterval(window.detectionInterval);
 
-        // 5 FPS (200ms) 靈敏偵測
         window.detectionInterval = setInterval(async () => {
             if (!faceMatcher || video.paused || video.ended) return;
 
             const displaySize = { width: video.clientWidth, height: video.clientHeight };
             faceapi.matchDimensions(canvas, displaySize);
 
-            const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
-            const resizedDetections = faceapi.resizeResults(detections, displaySize);
-
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+            const resizedDetections = faceapi.resizeResults(detections, displaySize);
 
             resizedDetections.forEach(detection => {
                 const match = faceMatcher.findBestMatch(detection.descriptor);
@@ -222,13 +271,14 @@
                 if (match.label !== 'unknown') {
                     const drawBox = new faceapi.draw.DrawBox(box, { label: `✅ ${match.label}`, boxColor: '#4caf50' });
                     drawBox.draw(canvas);
+
                     sendTriggerToHub(match.label);
                 } else {
                     const drawBox = new faceapi.draw.DrawBox(box, { label: '未登記', boxColor: '#f44336' });
                     drawBox.draw(canvas);
                 }
             });
-        }, 250);
+        }, 200);
     }
 
     function sendTriggerToHub(studentId) {
