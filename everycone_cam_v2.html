@@ -21,15 +21,10 @@
         .camera-select-group label { font-size: 0.85rem; color: #4caf50; font-weight: bold; display: block; margin-bottom: 3px; }
         .camera-select-group select { width: 100%; padding: 6px 10px; font-size: 0.9rem; border-radius: 8px; border: 1.5px solid #4caf50; background: #222; color: white; }
 
-        .zoom-control-group { margin-bottom: 10px; text-align: left; background: #222; padding: 8px 12px; border-radius: 8px; border: 1px solid #333; display: none; }
-        .zoom-control-group label { font-size: 0.85rem; color: #ff9800; font-weight: bold; display: flex; justify-content: space-between; }
-        .zoom-control-group input[type=range] { width: 100%; margin-top: 5px; }
-
-        .video-wrapper { position: relative; width: 100%; max-height: 50vh; border-radius: 16px; overflow: hidden; border: 3px solid #4caf50; background: #000; display: flex; justify-content: center; align-items: center; }
+        .video-wrapper { position: relative; width: 100%; max-height: 50vh; border-radius: 16px; overflow: hidden; border: 3px solid #4caf50; background: #000; }
         
-        /* 使用 contain 避免裁切廣角畫面邊緣 */
-        video { width: 100%; height: 100%; object-fit: contain; }
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
         
         .control-panel { display: flex; gap: 8px; margin-top: 10px; }
         .btn-action { flex: 1; padding: 8px 12px; font-size: 0.85rem; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; color: white; transition: 0.2s; }
@@ -46,15 +41,10 @@
     <div id="badge">📷 正在載入錐桶分站相機 v2...</div>
     
     <div class="camera-select-group">
-        <label>選擇相機鏡頭（優先調用後置超廣角）：</label>
+        <label>選擇相機鏡頭：</label>
         <select id="camera-select">
             <option value="">正在偵測可用鏡頭...</option>
         </select>
-    </div>
-
-    <div class="zoom-control-group" id="zoom-container">
-        <label>🔍 廣角 / 光學數位縮放：<span id="zoom-value">1.0x</span></label>
-        <input type="range" id="zoom-slider" min="1" max="1" step="0.1" value="1">
     </div>
 
     <div class="video-wrapper">
@@ -67,7 +57,7 @@
         <button class="btn-action btn-lock" onclick="toggleBoundaryLock()"><span id="lock-btn-text">🔒 鎖定界線 (省電模式)</span></button>
     </div>
 
-    <div id="status-text">🔄 正在載入 AI 模型與廣角鏡頭優化模組...</div>
+    <div id="status-text">🔄 正在載入 AI 模型與雪糕桶辨識模組...</div>
 </div>
 
 <script>
@@ -81,11 +71,10 @@
     let faceMatcher = null;
     let studentLastTrigger = {}; 
     let currentStream = null;
-    let activeVideoTrack = null;
     
     let cvReady = false;
     let isBoundaryLocked = false;
-    let activeBoundaryLine = null;
+    let activeBoundaryLine = null; // 儲存鎖定的 3D/2D 虛擬界線 [x1, y1, x2, y2]
     let detectedArucoId = null;
 
     let analysisCanvas = document.createElement('canvas');
@@ -101,7 +90,7 @@
         role = urlParams.get('role') || 'cp1';
         sessionId = urlParams.get('session') || 'default';
         
-        document.getElementById('badge').innerText = `📡 分站相機：${role.toUpperCase()} (超廣角優化版)`;
+        document.getElementById('badge').innerText = `📡 分站相機：${role.toUpperCase()} (ArUco動態界線版)`;
 
         initTrackpointRealtime();
         await loadModelsAndStudentFaceDB();
@@ -139,7 +128,7 @@
 
             if (labeledDescriptors.length > 0) {
                 faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
-                document.getElementById('status-text').innerText = `✅ 相機就緒！請確認已啟用後置超廣角鏡頭。`;
+                document.getElementById('status-text').innerText = `✅ 相機就緒！瞄準雪糕桶 ArUco 可隨時校準界線。`;
             }
         } catch (err) {
             console.error(err);
@@ -165,7 +154,7 @@
     async function initCameraDevices() {
         const cameraSelect = document.getElementById('camera-select');
         try {
-            const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
             tempStream.getTracks().forEach(track => track.stop());
 
             const devices = await navigator.mediaDevices.enumerateDevices();
@@ -178,30 +167,22 @@
                 return;
             }
 
-            let bestDeviceId = null;
+            let defaultDeviceId = null;
             videoDevices.forEach((device, index) => {
                 const option = document.createElement('option');
                 option.value = device.deviceId;
-                const label = device.label.toLowerCase();
+                option.text = device.label || `鏡頭 ${index + 1}`;
                 
-                let isUltraWide = label.includes('ultra') || label.includes('wide') || label.includes('0.5') || label.includes('廣角') || label.includes('back 0');
-                let isBack = label.includes('back') || label.includes('rear') || label.includes('後');
-
-                option.text = device.label ? `${device.label}${isUltraWide ? ' 🌟(廣角/Ultra-wide)' : ''}` : `鏡頭 ${index + 1}`;
-                
-                // 優先選擇後置超廣角鏡頭
-                if (isUltraWide && !bestDeviceId) {
-                    bestDeviceId = device.deviceId;
-                } else if (isBack && !bestDeviceId) {
-                    bestDeviceId = device.deviceId;
+                const labelLower = device.label.toLowerCase();
+                if (labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前') || index === 0) {
+                    if (!defaultDeviceId || labelLower.includes('front') || labelLower.includes('user') || labelLower.includes('前')) {
+                        defaultDeviceId = device.deviceId;
+                    }
                 }
-
                 cameraSelect.appendChild(option);
             });
 
-            if (!bestDeviceId && videoDevices.length > 0) bestDeviceId = videoDevices[videoDevices.length - 1].deviceId;
-            if (bestDeviceId) cameraSelect.value = bestDeviceId;
-
+            if (defaultDeviceId) cameraSelect.value = defaultDeviceId;
             await startCamera(cameraSelect.value);
 
             cameraSelect.addEventListener('change', async (e) => {
@@ -219,24 +200,13 @@
         if (currentStream) currentStream.getTracks().forEach(track => track.stop());
 
         const constraints = {
-            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } } 
-                            : { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }
+            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 480 }, height: { ideal: 360 } } 
+                            : { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 } }
         };
 
         try {
             currentStream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = currentStream;
-            activeVideoTrack = currentStream.getVideoTracks()[0];
-            
-            // 啟用 Zoom 控制 API (如硬體支援)
-            setupZoomControls(activeVideoTrack);
-
-            // 判斷是否為前置鏡頭（若為前置則翻轉，後置廣角不翻轉）
-            const label = activeVideoTrack.label.toLowerCase();
-            const isFront = label.includes('front') || label.includes('user') || label.includes('前');
-            video.style.transform = isFront ? 'scaleX(-1)' : 'none';
-            document.getElementById('overlay-canvas').style.transform = isFront ? 'scaleX(-1)' : 'none';
-
             video.onplay = () => onVideoPlay();
         } catch (err) {
             console.error('啟動鏡頭失敗:', err);
@@ -244,37 +214,7 @@
         }
     }
 
-    function setupZoomControls(track) {
-        const zoomContainer = document.getElementById('zoom-container');
-        const zoomSlider = document.getElementById('zoom-slider');
-        const zoomValueDisplay = document.getElementById('zoom-value');
-
-        if (!track || typeof track.getCapabilities !== 'function') {
-            zoomContainer.style.display = 'none';
-            return;
-        }
-
-        const capabilities = track.getCapabilities();
-        if (capabilities.zoom) {
-            zoomContainer.style.display = 'block';
-            zoomSlider.min = capabilities.zoom.min;
-            zoomSlider.max = capabilities.zoom.max;
-            zoomSlider.step = capabilities.zoom.step || 0.1;
-            
-            const settings = track.getSettings();
-            zoomSlider.value = settings.zoom || capabilities.zoom.min;
-            zoomValueDisplay.innerText = parseFloat(zoomSlider.value).toFixed(1) + 'x';
-
-            zoomSlider.oninput = (e) => {
-                const val = parseFloat(e.target.value);
-                zoomValueDisplay.innerText = val.toFixed(1) + 'x';
-                track.applyConstraints({ advanced: [{ zoom: val }] });
-            };
-        } else {
-            zoomContainer.style.display = 'none';
-        }
-    }
-
+    // 🔍 手動 / 自動重新偵測 ArUco Code 設定 3D 虛擬界線
     function detectArUcoMarker(video) {
         if (!cvReady || typeof cv.aruco === 'undefined') return null;
 
@@ -301,9 +241,9 @@
             let result = null;
             if (ids.rows > 0) {
                 let idVal = ids.data32S[0];
-                let cornerMat = corners.get(0);
-                let x = cornerMat.data32F[0];
-                let y = cornerMat.data32F[1];
+                let cornerMat = corners.get(0); // 取得第一個抓到的 Marker 的四個角點座標
+                let x = cornerMat.data32F[0]; // 左上角 X
+                let y = cornerMat.data32F[1]; // 左上角 Y
                 
                 result = { id: idVal, x: x, y: y };
             }
@@ -315,6 +255,7 @@
         }
     }
 
+    // 按鈕：重新校準界線
     function reCalibrateBoundary() {
         isBoundaryLocked = false;
         activeBoundaryLine = null;
@@ -322,6 +263,7 @@
         document.getElementById('status-text').innerText = '🎯 已開啟 ArUco 掃描！請將相機對準雪糕桶上的標記...';
     }
 
+    // 按鈕：手動切換鎖定狀態 (鎖定後關閉 OpenCV，專注於人臉辨識)
     function toggleBoundaryLock() {
         isBoundaryLocked = !isBoundaryLocked;
         const lockText = document.getElementById('lock-btn-text');
@@ -349,10 +291,12 @@
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            // 1. 若尚未鎖定界線，持續進行 OpenCV ArUco 掃描
             if (!isBoundaryLocked) {
                 const arucoRes = detectArUcoMarker(video);
                 if (arucoRes) {
                     detectedArucoId = arucoRes.id;
+                    // 以 ArUco Marker 的位置為基準，設定延伸過點界線 (貫穿跑道)
                     const scaleX = displaySize.width / 320;
                     const markerX = arucoRes.x * scaleX;
                     activeBoundaryLine = { x: markerX, id: arucoRes.id };
@@ -360,6 +304,7 @@
                 }
             }
 
+            // 2. 在畫面上繪製虛擬綠色界線 (綠色標示線)
             if (activeBoundaryLine) {
                 ctx.strokeStyle = '#00e676';
                 ctx.lineWidth = 4;
@@ -375,6 +320,7 @@
                 ctx.setLineDash([]);
             }
 
+            // 3. 人臉辨識
             const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
             const resizedDetections = faceapi.resizeResults(detections, displaySize);
 
@@ -387,6 +333,7 @@
                     const drawBox = new faceapi.draw.DrawBox(box, { label: labelText, boxColor: '#4caf50' });
                     drawBox.draw(canvas);
 
+                    // 若設定了界線，可以確保學生通過界線才觸發發送；若無界線則人臉出現即發送
                     sendTriggerToHub(match.label, detectedArucoId);
                 } else {
                     const drawBox = new faceapi.draw.DrawBox(box, { label: '未登記', boxColor: '#f44336' });
