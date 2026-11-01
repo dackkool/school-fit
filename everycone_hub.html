@@ -66,6 +66,7 @@
             <div style="flex: 1;">
                 <label style="font-size: 0.85rem; font-weight: bold; color: #2e7d32;">選擇賽事時間長度：</label>
                 <select id="match-duration-select" style="padding: 6px; width: 100%; border-radius: 6px; border: 1px solid #c8e6c9;">
+                    <option value="0.1667">10 秒極速測試</option>
                     <option value="6">6 分鐘耐力賽</option>
                     <option value="9">9 分鐘耐力賽</option>
                 </select>
@@ -84,7 +85,7 @@
             <span id="match-status-badge" style="color: #666; font-size: 0.85rem; font-weight: bold;">狀態：等待開始</span>
         </div>
         <div id="live-log">
-            <div style="text-align: center; color: #888; padding: 30px;">請設定賽事時間並點擊「開始 / Reset 比賽」...</div>
+            <div style="text-align: center; color: #888; padding: 30px;">請設定賽事時間並點擊「開始 / Reset 比賽」後方可開始計分...</div>
         </div>
     </div>
 
@@ -126,7 +127,7 @@
                     </tr>
                 </thead>
                 <tbody id="ranking-tbody">
-                    <tr><td colspan="5" style="color: #888; padding: 20px;">尚無參賽記錄</td></tr>
+                    <tr><td colspan="5" style="color: #888; padding: 20px;">尚無學生過點記錄</td></tr>
                 </tbody>
             </table>
         </div>
@@ -134,23 +135,19 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
     let trackpointHeartbeats = {};
     let studentNameMap = {}; 
 
-    // 🔑 產生唯一賽事 Session ID
     const raceSessionId = 'cone_' + Math.random().toString(36).substring(2, 9);
 
-    // 🏆 比賽數據結構：記錄每個學生的圈數與當前期待過點
-    // { 'S001': { completedLaps: 0, nextExpectedCp: null } }
     let liveConeData = {};
     let calculatedRankings = []; 
 
-    // ⏱️ 賽事計時器相關
     let matchTimerInterval = null;
     let matchTimeRemaining = 0;
     let isMatchRunning = false;
@@ -199,7 +196,6 @@
             .subscribe();
     }
 
-    // 🚀 新計法核心邏輯：任意點出發，依序累計圈數與進度
     function handleConeTrigger(studentId, cpId, timestamp) {
         const totalCps = parseInt(document.getElementById('cp-count-select').value);
         const logBox = document.getElementById('live-log');
@@ -211,76 +207,51 @@
         if (!liveConeData[studentId]) {
             liveConeData[studentId] = {
                 completedLaps: 0,
-                nextExpectedCp: cpId // 以首次偵測到的點作為啟動點
+                lastCp: null,
+                nextExpectedCp: cpId, 
+                streakCount: 0,
+                hasRecord: true
             };
         }
 
         const runner = liveConeData[studentId];
 
-        // 判斷是否為預期的下一個檢查點
-        if (cpId === runner.nextExpectedCp) {
-            // 記錄這次成功過點
-            logBox.innerHTML = `<div class="log-item"><span>📍 學生 <b>${studentName} (${studentId})</b> 通過 <b>CP${cpId}</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
-            
-            // 計算下一個期望點
-            const nextCp = (cpId % totalCps) + 1;
-            runner.nextExpectedCp = nextCp;
-
-            // 如果剛好走完最後一個 CP（即剛過完 CP1 或 循環回到起點前），代表完成完整一圈
-            // 規則：當通過 CP1 時且它剛好完成了一個完整循環 (或簡單以每通過 CP1 為一圈基準，亦可按順序完整走完一圈)
-            // 這裡採用：當完整通過所有站點順序回到起始點，或每次完整繞完一圈判定：
-            // 為求最直覺：當學生從任意點開始，順序走完整整一圈回到該起點，或統一經由 CP1 算一圈。
-            // 為了符合「順序經過CP1->CP2->CP3->CP4->CP1便是一圈」，我們設定：當 nextExpectedCp 重新回到起點時即完成一圈。
-            // 更精準的做法：只要順序走完總站數，就算完成一圈！
+        if (runner.lastCp === cpId) {
+            logBox.innerHTML = `<div class="log-item" style="color: #888;"><span>⚠️ 提示：${studentName} 停留在 <b>CP${cpId}</b>，未移動至下一站</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
+            return;
         }
 
-        // 我們採用更完善的軌跡計分：
-        // 追蹤當前學生的進度：當連續依序通過所有 CP 時，completedLaps + 1
-        // 為了讓學生從「任意點出發」也能順利計分：
-        // 只要收到的 cpId 等於期望的下一個點：
-        if (runner.nextExpectedCp === null || cpId === runner.nextExpectedCp) {
-            if (runner.nextExpectedCp === null) {
-                runner.nextExpectedCp = cpId;
-            }
-            
-            // 推進下一站
-            runner.nextExpectedCp = (cpId % totalCps) + 1;
-
-            // 檢查是否剛完成一圈（當完成了一個完整的循環，即剛好走完總站數回到起點，或以 CP1 作為圈數結算點）
-            // 簡單起見：當依序通過滿 totalCps 個站點時，完成一圈。我們在物件中記錄已連續通過的站數：
-            if (!runner.streakCount) runner.streakCount = 0;
+        if (runner.lastCp === null || cpId === runner.nextExpectedCp) {
+            runner.lastCp = cpId;
+            runner.nextExpectedCp = (cpId % totalCps) + 1; 
             runner.streakCount++;
 
             logBox.innerHTML = `<div class="log-item"><span>📍 <b>${studentName} (${studentId})</b> 通過 <b>CP${cpId}</b> (進度: ${runner.streakCount}/${totalCps})</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
 
             if (runner.streakCount >= totalCps) {
                 runner.completedLaps++;
-                runner.streakCount = 0; // 重置小計圈
+                runner.streakCount = 0; 
                 logBox.innerHTML = `<div class="log-item" style="background: #e8f5e9;"><span>🏆 <b>${studentName} (${studentId})</b> 成功完成 <b>第 ${runner.completedLaps} 圈</b>！</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
                 speak(`${studentName} 完成第 ${runner.completedLaps} 圈`);
             }
         } else {
-            // 順序不符時的容錯或提示（若學生逆向或亂跑）
-            // 可選：若想寬鬆允許任意順序，則直接累計過點數；若要嚴格順序，則提示順序錯誤。根據需求「順序經過CP1->CP2->CP3->CP4->CP1便是一圈」，維持嚴格順序校驗：
             logBox.innerHTML = `<div class="log-item" style="color: #d32f2f;"><span>⚠️ 順序提示：${studentName} 應過 CP${runner.nextExpectedCp}，卻收到 CP${cpId}</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
         }
 
         renderCurrentRaceRanking();
     }
 
-    // ⏱️ 開始或重置比賽
     function startOrResetMatch() {
-        const durationMin = parseInt(document.getElementById('match-duration-select').value);
+        const durationVal = parseFloat(document.getElementById('match-duration-select').value);
+        const durationText = durationVal < 1 ? "10秒" : `${durationVal}分鐘`;
         
-        if (confirm(`確定要開始/重置 ${durationMin} 分鐘耐力賽嗎？現有實況與排行榜將會歸零！`)) {
-            // 清空數據
+        if (confirm(`確定要開始/重置 ${durationText} 賽事嗎？現有實況與排行榜將會歸零！`)) {
             liveConeData = {};
             calculatedRankings = [];
             document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #2e7d32; padding: 30px; font-weight: bold;">賽事已正式開始！等待學生過點...</div>`;
             
-            // 啟動計時器
             if (matchTimerInterval) clearInterval(matchTimerInterval);
-            matchTimeRemaining = durationMin * 60;
+            matchTimeRemaining = Math.round(durationVal * 60);
             isMatchRunning = true;
             document.getElementById('match-status-badge').innerText = '狀態：🔴 比賽進行中';
 
@@ -307,16 +278,12 @@
         document.getElementById('timer-display').innerText = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
     }
 
-    // 🏆 排行榜：只顯示有過點的參加者，依完成圈數與當前進度由多至少排列
     function renderCurrentRaceRanking() {
         const tbody = document.getElementById('ranking-tbody');
         const summary = document.getElementById('ranking-summary');
         const totalCps = parseInt(document.getElementById('cp-count-select').value);
 
-        const activeStudentIds = Object.keys(liveConeData).filter(id => {
-            const d = liveConeData[id];
-            return d.completedLaps > 0 || (d.streakCount && d.streakCount > 0);
-        });
+        const activeStudentIds = Object.keys(liveConeData).filter(id => liveConeData[id].hasRecord);
 
         if (activeStudentIds.length === 0) {
             tbody.innerHTML = `<tr><td colspan="5" style="color: #888; padding: 20px;">尚無學生過點記錄</td></tr>`;
@@ -338,7 +305,7 @@
             };
         }).sort((a, b) => {
             if (b.completedLaps !== a.completedLaps) return b.completedLaps - a.completedLaps;
-            return b.progress - a.progress; // 圈數相同者以當前站點進度多者排前面
+            return b.progress - a.progress; 
         });
 
         tbody.innerHTML = '';
@@ -357,7 +324,6 @@
         summary.innerHTML = `🏁 <b>賽事進行中：</b> 目前共 ${calculatedRankings.length} 名學生有過點成績！`;
     }
 
-    // 📥 下載 CSV 成績單
     function exportToCSV() {
         if (calculatedRankings.length === 0) {
             alert('尚無比賽成績可匯出！');
