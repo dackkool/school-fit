@@ -50,8 +50,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
@@ -183,8 +183,10 @@
             currentStream.getTracks().forEach(track => track.stop());
         }
 
+        // 💡 統一全面使用 480x360 解析度，確保所有裝置順暢運行
         const constraints = {
-            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 480 }, height: { ideal: 360 } } : { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
+            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 480 }, height: { ideal: 360 } } 
+                            : { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 } }
         };
 
         try {
