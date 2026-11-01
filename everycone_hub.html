@@ -66,7 +66,7 @@
             <div style="flex: 1;">
                 <label style="font-size: 0.85rem; font-weight: bold; color: #2e7d32;">選擇賽事時間長度：</label>
                 <select id="match-duration-select" style="padding: 6px; width: 100%; border-radius: 6px; border: 1px solid #c8e6c9;">
-                    <option value="0.25">15 秒極速測試</option>
+                    <option value="0.25">15 秒測試賽</option>
                     <option value="6">6 分鐘耐力賽</option>
                     <option value="9">9 分鐘耐力賽</option>
                 </select>
@@ -135,8 +135,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
@@ -241,14 +241,33 @@
         renderCurrentRaceRanking();
     }
 
+    // 🛑 點擊開始時強制檢查所有相機是否已在線
     function startOrResetMatch() {
+        const totalCps = parseInt(document.getElementById('cp-count-select').value);
+        const now = Date.now();
+        let offlineList = [];
+
+        // 檢查每一個設定中的檢查點是否在線 (6秒內有收到心跳)
+        for (let i = 1; i <= totalCps; i++) {
+            const lastHeartbeat = trackpointHeartbeats[i] || 0;
+            if (now - lastHeartbeat >= 6000) {
+                offlineList.push(`CP${i}`);
+            }
+        }
+
+        // 如果有任何相機離線，阻止開始並彈出提示
+        if (offlineList.length > 0) {
+            alert(`⚠️ 無法開始比賽！以下相機尚未上線或連線中斷：\n【 ${offlineList.join(', ')} 】\n\n請確保所有分站相機已開啟並掃描連線後再試一次！`);
+            return;
+        }
+
         const durationVal = parseFloat(document.getElementById('match-duration-select').value);
         const durationText = durationVal < 1 ? "15秒" : `${durationVal}分鐘`;
         
         if (confirm(`確定要開始/重置 ${durationText} 賽事嗎？現有實況與排行榜將會歸零！`)) {
             liveConeData = {};
             calculatedRankings = [];
-            document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #2e7d32; padding: 30px; font-weight: bold;">賽事已正式開始！等待學生過點...</div>`;
+            document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #2e7d32; padding: 30px; font-weight: bold;">賽事已正式開始！所有相機已就緒，等待學生過點...</div>`;
             
             if (matchTimerInterval) clearInterval(matchTimerInterval);
             matchTimeRemaining = Math.round(durationVal * 60);
