@@ -35,8 +35,12 @@
         #live-log { background: #fafafa; border: 1px solid #ddd; border-radius: 10px; height: 200px; overflow-y: auto; padding: 10px; font-size: 0.9rem; margin-bottom: 10px; }
         .log-item { padding: 6px 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
 
-        .history-container { background: #fafafa; border: 1px solid #ddd; border-radius: 12px; padding: 15px; max-height: 350px; overflow-y: auto; }
+        .history-container { background: #fafafa; border: 1px solid #ddd; border-radius: 12px; padding: 15px; max-height: 420px; overflow-y: auto; }
         .analysis-card { background: #e3f2fd; border-left: 5px solid #1565c0; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem; color: #0d47a1; }
+        
+        /* 圖表容器樣式 */
+        #chart-container { width: 100%; height: 180px; background: white; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; display: none; padding: 5px; position: relative; }
+        
         table.history-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
         table.history-table th, table.history-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         table.history-table th { background-color: #f5f5f5; color: #333; }
@@ -116,6 +120,12 @@
         </div>
         <div class="history-container">
             <div id="analysis-advice" class="analysis-card">正在載入體能分析與建議...</div>
+            
+            <!-- 📈 成績走勢點與趨勢線圖表畫布 -->
+            <div id="chart-container">
+                <canvas id="history-trend-canvas" style="width: 100%; height: 100%; display: block;"></canvas>
+            </div>
+
             <div id="history-table-container">
                 <table class="history-table">
                     <thead>
@@ -153,8 +163,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'YOUR SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR ANON CODE'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
@@ -215,19 +225,21 @@
         if (tabName === 'history') loadStudentHistory();
     }
 
-    // 📈 載入歷史成績 (依時間由新至舊排列，移除 ID 欄位)
+    // 📈 載入歷史成績並繪製圖表與趨勢線
     async function loadStudentHistory() {
         const studentId = document.getElementById('active-student-id').value.trim();
         const tbody = document.getElementById('history-tbody');
         const adviceBox = document.getElementById('analysis-advice');
+        const chartContainer = document.getElementById('chart-container');
 
         if (!studentId) {
             tbody.innerHTML = `<tr><td colspan="4">尚未指定學生學號</td></tr>`;
             adviceBox.innerHTML = `💡 <b>提示：</b> 請先確認已登入學生帳號。`;
+            chartContainer.style.display = 'none';
             return;
         }
 
-        adviceBox.innerHTML = `🔄 正在分析 ${studentId} 的跑圈歷史數據...`;
+        adviceBox.innerHTML = `🔄 正在分析 ${studentId} 的跑圈歷史數據與趨勢...`;
 
         try {
             const { data, error } = await supabaseClient
@@ -235,13 +247,14 @@
                 .select('*')
                 .eq('student_id', studentId)
                 .eq('category', 'running')
-                .order('created_at', { ascending: false }); // 依時間由新至舊排列
+                .order('created_at', { ascending: false }); // 由新至舊排列
 
             if (error) throw error;
 
             if (!data || data.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="4" style="color: #888; padding: 20px;">尚無跑圈記錄</td></tr>`;
-                adviceBox.innerHTML = `💡 <b>表現分析與建議：</b> 目前尚無您的跑圈記錄。建議完成測驗並點擊「上傳所有圈速成績」來累積數據，以獲取專屬體能評估！`;
+                adviceBox.innerHTML = `💡 <b>表現分析與建議：</b> 目前尚無您的跑圈記錄。建議完成測驗並點擊上傳成績來累積數據！`;
+                chartContainer.style.display = 'none';
                 return;
             }
 
@@ -265,19 +278,130 @@
             adviceHtml += `⚡ 平均每圈圈速為：<b>${avgSpeed} 秒</b>。<br>`;
 
             if (avgSpeed < 30) {
-                adviceHtml += `🔥 <b>專業建議：</b> 速度表現非常優秀！爆發力與心肺耐力極佳，建議在後續訓練中維持節奏，並注意適度伸展。`;
+                adviceHtml += `🔥 <b>專業建議：</b> 速度表現非常優秀！爆發力與心肺耐力極佳，建議在後續訓練中維持節奏。`;
             } else if (avgSpeed < 60) {
-                adviceHtml += `👍 <b>專業建議：</b> 表現穩健！體能狀態良好。若想進一步提升成績，可透過間歇跑訓練來加強後段耐力。`;
+                adviceHtml += `👍 <b>專業建議：</b> 表現穩健！體能狀態良好。若想進一步提升成績，可透過間歇訓練加強。`;
             } else {
-                adviceHtml += `💡 <b>專業建議：</b> 剛開始起步或耐力尚在建立中。建議以穩定呼吸、均勻步伐為主，循序漸進提升速度！`;
+                adviceHtml += `💡 <b>專業建議：</b> 剛開始起步或耐力尚在建立中。建議以穩定呼吸、均勻步伐為主，循序漸進！`;
             }
 
             adviceBox.innerHTML = adviceHtml;
 
+            // 📊 繪製圖表：包含數據點、折線以及線性趨勢線
+            drawHistoryTrendChart(data);
+
         } catch (err) {
             tbody.innerHTML = `<tr><td colspan="4" style="color: #d32f2f;">載入失敗: ${err.message}</td></tr>`;
             adviceBox.innerHTML = `❌ 無法讀取歷史數據，請檢查資料庫連線。`;
+            chartContainer.style.display = 'none';
         }
+    }
+
+    // 📊 渲染折線圖與趨勢線函式
+    function drawHistoryTrendChart(records) {
+        const container = document.getElementById('chart-container');
+        const canvas = document.getElementById('history-trend-canvas');
+        container.style.display = 'block';
+
+        // 設定 Canvas 實際解析度
+        canvas.width = container.clientWidth - 10;
+        canvas.height = container.clientHeight - 10;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 將資料按時間由舊到新排序以正確繪製時序趨勢
+        const sorted = [...records].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+        if (sorted.length === 0) return;
+
+        const padding = 35;
+        const width = canvas.width - padding * 2;
+        const height = canvas.height - padding * 2;
+
+        const scores = sorted.map(r => r.score_value);
+        const minVal = Math.min(...scores);
+        const maxVal = Math.max(...scores);
+        const valRange = (maxVal - minVal) === 0 ? 1 : (maxVal - minVal);
+
+        // 1. 繪製背景格線與Y軸標籤
+        ctx.strokeStyle = '#eee';
+        ctx.lineWidth = 1;
+        ctx.fillStyle = '#666';
+        ctx.font = '10px sans-serif';
+
+        for (let i = 0; i <= 3; i++) {
+            const val = minVal + (valRange / 3) * i;
+            const y = canvas.height - padding - (i / 3) * height;
+            ctx.beginPath();
+            ctx.moveTo(padding, y);
+            ctx.lineTo(canvas.width - padding, y);
+            ctx.stroke();
+            ctx.fillText(val.toFixed(1) + 's', 5, y + 3);
+        }
+
+        // 計算座標點
+        const points = sorted.map((r, idx) => {
+            const x = padding + (sorted.length === 1 ? width / 2 : (idx / (sorted.length - 1)) * width);
+            const y = canvas.height - padding - ((r.score_value - minVal) / valRange) * height;
+            return { x, y, val: r.score_value };
+        });
+
+        // 2. 繪製趨勢線 (Linear Regression Least Squares)
+        if (sorted.length >= 2) {
+            let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+            const n = points.length;
+            points.forEach((p, idx) => {
+                sumX += idx;
+                sumY += p.val;
+                sumXY += idx * p.val;
+                sumXX += idx * idx;
+            });
+            const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+            const intercept = (sumY - slope * sumX) / n;
+
+            const startYVal = intercept;
+            const endYVal = slope * (n - 1) + intercept;
+
+            const startX = points[0].x;
+            const startY = canvas.height - padding - ((startYVal - minVal) / valRange) * height;
+            const endX = points[n - 1].x;
+            const endY = canvas.height - padding - ((endYVal - minVal) / valRange) * height;
+
+            ctx.strokeStyle = '#f44336'; // 紅色趨勢線
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]); // 虛線風格
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            ctx.setLineDash([]); // 重設實線
+        }
+
+        // 3. 繪製數據點連線 (折線)
+        if (points.length >= 2) {
+            ctx.strokeStyle = '#1565c0'; // 藍色折線
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            points.forEach((p, idx) => {
+                if (idx === 0) ctx.moveTo(p.x, p.y);
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
+        }
+
+        // 4. 繪製數據實心圓點與數值文字
+        points.forEach((p, idx) => {
+            ctx.fillStyle = '#1565c0';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 頂部數值標籤
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(p.val + 's', p.x, p.y - 8);
+        });
     }
 
     let regStream = null;
