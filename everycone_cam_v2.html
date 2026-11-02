@@ -61,8 +61,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'SUPA URL'; 
+    const SUPABASE_ANON_KEY = 'ANON KEY'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let role = 'cp1';
@@ -169,6 +169,7 @@
 
             let defaultDeviceId = null;
             videoDevices.forEach((device, index) => {
+                // 1. 加入原本的實體鏡頭選項
                 const option = document.createElement('option');
                 option.value = device.deviceId;
                 option.text = device.label || `鏡頭 ${index + 1}`;
@@ -180,6 +181,14 @@
                     }
                 }
                 cameraSelect.appendChild(option);
+
+                // 2. 額外動態產生一個「後置 0.5x 超廣角」的專用選項（如果該裝置是後置或預設非前置）
+                if (!labelLower.includes('front') && !labelLower.includes('user') && !labelLower.includes('前')) {
+                    const wideOption = document.createElement('option');
+                    wideOption.value = device.deviceId + '_0.5x';
+                    wideOption.text = (device.label || `鏡頭 ${index + 1}`) + ' [超廣角 0.5x]';
+                    cameraSelect.appendChild(wideOption);
+                }
             });
 
             if (defaultDeviceId) cameraSelect.value = defaultDeviceId;
@@ -195,15 +204,37 @@
         }
     }
 
-    async function startCamera(deviceId) {
+    async function startCamera(selectionValue) {
         const video = document.getElementById('cam-video');
         const canvas = document.getElementById('overlay-canvas');
         if (currentStream) currentStream.getTracks().forEach(track => track.stop());
 
-        const constraints = {
-            video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 480 }, height: { ideal: 360 } } 
-                            : { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 } }
-        };
+        let deviceId = selectionValue;
+        let useZoomOut = false;
+
+        // 檢查是否選中了我們自定義的 0.5x 超廣角選項
+        if (selectionValue && selectionValue.endsWith('_0.5x')) {
+            deviceId = selectionValue.replace('_0.5x', '');
+            useZoomOut = true;
+        }
+
+        let constraints;
+        if (useZoomOut) {
+            // 嘗試強制套用 0.5x 縮放以開啟超廣角
+            constraints = {
+                video: {
+                    deviceId: { exact: deviceId },
+                    width: { ideal: 480 },
+                    height: { ideal: 360 },
+                    advanced: [{ zoom: 0.5 }]
+                }
+            };
+        } else {
+            constraints = {
+                video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 480 }, height: { ideal: 360 } } 
+                                : { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 } }
+            };
+        }
 
         try {
             currentStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -223,8 +254,22 @@
 
             video.onplay = () => onVideoPlay();
         } catch (err) {
-            console.error('啟動鏡頭失敗:', err);
-            alert('無法啟動所選鏡頭！');
+            console.warn('套用 0.5x 超廣角失敗，改用標準模式重試:', err);
+            // 降級保護：若該手機不支援 advanced zoom，則自動退回普通標準模式啟動
+            try {
+                const fallbackConstraints = {
+                    video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 480 }, height: { ideal: 360 } } 
+                                    : { facingMode: "environment", width: { ideal: 480 }, height: { ideal: 360 } }
+                };
+                currentStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+                video.srcObject = currentStream;
+                video.style.transform = 'none';
+                canvas.style.transform = 'none';
+                video.onplay = () => onVideoPlay();
+            } catch (fallbackErr) {
+                console.error('啟動鏡頭徹底失敗:', fallbackErr);
+                alert('無法啟動所選鏡頭！');
+            }
         }
     }
 
