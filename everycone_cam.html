@@ -47,6 +47,28 @@
     <div id="status-text">🔄 正在載入 AI 模型與鏡頭修正模組...</div>
 </div>
 
+<!-- 在網頁上新增切換鏡頭按鈕 -->
+<button onclick="switchToUltraWide()">切換 0.5x 超廣角</button>
+<button onclick="switchToMain()">切換 1.0x 標準鏡頭</button>
+
+<script>
+function switchToUltraWide() {
+    if (window.AndroidBridge) {
+        // 呼叫我們在 Android 寫好的橋樑，強制切換至 ID 2
+        window.AndroidBridge.switchLens("2");
+    } else {
+        alert("目前不是在 Android App 環境中");
+    }
+}
+
+function switchToMain() {
+    if (window.AndroidBridge) {
+        // 切換回標準鏡頭 ID 0
+        window.AndroidBridge.switchLens("0");
+    }
+}
+</script>
+
 <script>
     const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
     const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
