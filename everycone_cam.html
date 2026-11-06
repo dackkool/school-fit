@@ -48,22 +48,22 @@
 </div>
 
 <!-- 在網頁上新增切換鏡頭按鈕 -->
-<button onclick="switchToUltraWide()">切換 0.5x 超廣角</button>
-<button onclick="switchToMain()">切換 1.0x 標準鏡頭</button>
+<button onclick="triggerUltraWide()">切換 0.5x 超廣角</button>
+<button onclick="triggerStandard()">切換 1.0x 標準鏡頭</button>
 
 <script>
-function switchToUltraWide() {
-    if (window.AndroidBridge) {
-        // 呼叫我們在 Android 寫好的橋樑，強制切換至 ID 2
+// 切換到 0.5x 超廣角 (ID 2)
+function triggerUltraWide() {
+    if (window.AndroidBridge && typeof window.AndroidBridge.switchLens === 'function') {
         window.AndroidBridge.switchLens("2");
     } else {
-        alert("目前不是在 Android App 環境中");
+        console.log("AndroidBridge 尚未準備好或不在 App 環境中");
     }
 }
 
-function switchToMain() {
-    if (window.AndroidBridge) {
-        // 切換回標準鏡頭 ID 0
+// 切換到 1.0x 標準鏡頭 (ID 0)
+function triggerStandard() {
+    if (window.AndroidBridge && typeof window.AndroidBridge.switchLens === 'function') {
         window.AndroidBridge.switchLens("0");
     }
 }
@@ -93,20 +93,6 @@ function switchToMain() {
         await loadModelsAndStudentFaceDB();
         await initCameraDevices();
     });
-
-    // 切換到 0.5x 超廣角 (ID 2)
-    function setUltraWide() {
-        if (window.AndroidBridge) {
-            window.AndroidBridge.switchLens("2");
-        }
-    }
-    
-    // 切換到 1.0x 標準鏡頭 (ID 0)
-    function setStandardLens() {
-        if (window.AndroidBridge) {
-            window.AndroidBridge.switchLens("0");
-        }
-    }
 
     async function loadModelsAndStudentFaceDB() {
         const MODEL_URL = './models';
