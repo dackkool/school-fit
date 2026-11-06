@@ -72,6 +72,20 @@
         await initCameraDevices();
     });
 
+    // 切換到 0.5x 超廣角 (ID 2)
+    function setUltraWide() {
+        if (window.AndroidBridge) {
+            window.AndroidBridge.switchLens("2");
+        }
+    }
+    
+    // 切換到 1.0x 標準鏡頭 (ID 0)
+    function setStandardLens() {
+        if (window.AndroidBridge) {
+            window.AndroidBridge.switchLens("0");
+        }
+    }
+
     async function loadModelsAndStudentFaceDB() {
         const MODEL_URL = './models';
         try {
