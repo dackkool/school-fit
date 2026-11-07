@@ -139,8 +139,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon code'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
@@ -190,17 +190,26 @@
     }
 
     function initHubRealtime() {
-        supabaseChannel = supabaseClient.channel(`school_cone_room_${raceSessionId}`, { config: { broadcast: { self: true } } });
+        const channelName = `school_cone_room_${raceSessionId}`;
+        console.log("🔌 主機正在訂閱 Realtime 頻道:", channelName);
+
+        supabaseChannel = supabaseClient.channel(channelName, { config: { broadcast: { self: true } } });
         supabaseChannel
             .on('broadcast', { event: 'heartbeat' }, payload => { 
+                console.get?.() || console.log("💓 收到心跳包:", payload);
                 const cpNum = parseInt(payload.payload.checkpoint_id);
-                trackpointHeartbeats[cpNum] = Date.now(); 
+                if (!isNaN(cpNum)) {
+                    trackpointHeartbeats[cpNum] = Date.now(); 
+                }
             })
             .on('broadcast', { event: 'checkpoint_trigger' }, payload => { 
+                console.log("🎯 收到過站觸發:", payload);
                 const cpNum = parseInt(payload.payload.checkpoint_id);
                 handleRaceTrigger(payload.payload.student_id, cpNum, payload.payload.timestamp); 
             })
-            .subscribe();
+            .subscribe((status) => {
+                console.log("📡 主機頻道訂閱狀態:", status);
+            });
     }
 
     // ⏱️ 按下「開始比賽」才起跑計時（含連線防呆檢查）
@@ -314,7 +323,7 @@
         }
     }
 
-    // 🏆 EveryCone 計分邏輯：6圈得1分，之後每多1圈多1分（未滿6圈為0分）
+    // 🏆 EveryCone 計分邏輯：6圈得1分，之後每多一圈多1分（未滿6圈為0分）
     function calculateRunningScore(laps) {
         if (laps < 6) return 0;
         return 1 + (laps - 6);
