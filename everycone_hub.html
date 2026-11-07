@@ -119,18 +119,18 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
     let trackpointHeartbeats = {};
     let studentNameMap = {}; // 學號對應姓名的快取
 
-    // 🔑 產生唯一賽事 Session ID
+    // 🔑 產生唯一賽事 Session ID (確保多場同時舉行互不干擾)
     const raceSessionId = 'race_' + Math.random().toString(36).substring(2, 9);
 
-    // 🏆 本次獨立賽事專用數據結構
+    // 🏆 本次獨立賽事專用數據結構 (純記憶體運行)
     let liveRaceData = {};
     let calculatedRankings = []; // 儲存最終結算清單用作 CSV 匯出
 
@@ -141,6 +141,7 @@
         initHubRealtime();
         setInterval(checkTrackpointHealth, 2000);
 
+        // 載入學生姓名資料庫（純查詢對照用，不寫入往績）
         try {
             const { data } = await supabaseClient.from('students_db').select('student_id, name');
             if (data) {
@@ -165,6 +166,7 @@
     }
 
     function initHubRealtime() {
+        // 🔒 將 Realtime 頻道綁定 raceSessionId，實現多賽事隔離
         supabaseChannel = supabaseClient.channel(`school_running_room_${raceSessionId}`, { config: { broadcast: { self: true } } });
         supabaseChannel
             .on('broadcast', { event: 'heartbeat' }, payload => { 
@@ -176,6 +178,7 @@
             .subscribe();
     }
 
+    // 🚀 核心邏輯：獨立賽事多學生同時順序過點驗證
     function handleRaceTrigger(studentId, cpId, timestamp) {
         const totalCps = parseInt(document.getElementById('cp-count-select').value);
         const logBox = document.getElementById('live-log');
@@ -184,6 +187,7 @@
 
         if (logBox.innerHTML.includes('比賽準備就緒')) logBox.innerHTML = '';
 
+        // 若為新學生，初始化該生數據
         if (!liveRaceData[studentId]) {
             liveRaceData[studentId] = {
                 expectedCp: 1,
@@ -196,13 +200,16 @@
 
         const runner = liveRaceData[studentId];
 
+        // 順序驗證邏輯
         if (cpId === runner.expectedCp) {
             if (cpId === 1) {
                 if (runner.lapStartTime === null) {
+                    // 起跑出發
                     runner.lapStartTime = timestamp;
                     logBox.innerHTML = `<div class="log-item"><span>🚀 學生 <b>${studentName} (${studentId})</b> 從 <b>CP1 起點</b> 出發！</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
                     speak(`${studentName} 起跑`);
                 } else {
+                    // 完成一圈
                     const lapDuration = parseFloat(((timestamp - runner.lapStartTime) / 1000).toFixed(2));
                     runner.completedLaps++;
                     runner.totalDuration += lapDuration;
@@ -211,29 +218,34 @@
                     logBox.innerHTML = `<div class="log-item" style="background: #e8f5e9;"><span>🏆 <b>${studentName} (${studentId})</b> 完成第 <b>${runner.completedLaps}</b> 圈！圈速: <b>${lapDuration} 秒</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
                     speak(`${studentName} 完成第 ${runner.completedLaps} 圈`);
 
-                    runner.lapStartTime = timestamp;
+                    runner.lapStartTime = timestamp; // 設定下一圈起跑點
                 }
             } else {
+                // 通過中途檢查點
                 logBox.innerHTML = `<div class="log-item"><span>學生 <b>${studentName} (${studentId})</b> 通過 <b>檢查點 ${cpId}</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
                 speak(`${studentName} 通過檢查點 ${cpId}`);
             }
 
+            // 更新預期下一站
             runner.expectedCp = (cpId % totalCps) + 1;
         } else {
+            // 順序不符 (跳站)
             logBox.innerHTML = `<div class="log-item" style="color: #d32f2f;"><span>⚠️ 順序提示：${studentName} 應過 CP${runner.expectedCp}，卻收到 CP${cpId}</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
         }
     }
 
-    // 🏆 計算跑圈積分規則：6圈得1分，之後每多1圈多1分
+    // 🏆 計算跑圈積分：6圈得1分，之後每多1圈多1分（未滿6圈為0分）
     function calculateRunningScore(laps) {
         if (laps < 6) return 0;
         return 1 + (laps - 6);
     }
 
+    // 🏆 計算與渲染本次獨立賽事排行榜（只顯示有被偵測到的參加者，即 completedLaps > 0）
     function renderCurrentRaceRanking() {
         const tbody = document.getElementById('ranking-tbody');
         const summary = document.getElementById('ranking-summary');
 
+        // 過濾出至少完成 1 圈（有被偵測到過點）的參賽者
         const activeStudentIds = Object.keys(liveRaceData).filter(id => liveRaceData[id].completedLaps > 0);
 
         if (activeStudentIds.length === 0) {
@@ -243,6 +255,7 @@
             return;
         }
 
+        // 轉換為陣列並進行排序 (完成圈數多者優先；若圈數相同，則總時間少者優先)
         calculatedRankings = activeStudentIds.map(id => {
             const data = liveRaceData[id];
             const name = studentNameMap[id] || '未命名';
@@ -279,13 +292,14 @@
         summary.innerHTML = `🏁 <b>本次比賽已結算：</b> 共 ${calculatedRankings.length} 名有成績的學生已統計完畢！`;
     }
 
+    // 📥 將排行榜匯出為 .CSV 檔案
     function exportToCSV() {
         if (calculatedRankings.length === 0) {
             alert('尚無有效比賽排名數據可匯出！');
             return;
         }
 
-        let csvContent = "\uFEFF"; 
+        let csvContent = "\uFEFF"; // 加入 UTF-8 BOM 避免 Excel 中文亂碼
         csvContent += "名次,學生學號,學生姓名,完成圈數,跑圈積分,總花費時間(秒),平均圈速(秒/圈)\n";
 
         calculatedRankings.forEach((item, index) => {
@@ -345,13 +359,15 @@
         }
     }
 
+    // 📱 生成附帶 session 參數的 QR Code 網址
     function generateQRCodes() {
         const count = parseInt(document.getElementById('cp-count-select').value);
         const container = document.getElementById('qr-container');
         container.innerHTML = '';
-        const baseUrl = window.location.origin + window.location.pathname.replace('everycone_hub.html', 'everycone_cam.html');
+        const baseUrl = window.location.origin + window.location.pathname.replace('everyrun_hub.html', 'everyrun_cam.html');
         
         for (let i = 1; i <= count; i++) {
+            // 🔗 網址自動帶入 role 與 session 參數
             const targetUrl = `${baseUrl}?role=cp${i}&session=${raceSessionId}`;
             const box = document.createElement('div');
             box.className = 'qr-box';
