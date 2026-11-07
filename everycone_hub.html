@@ -139,8 +139,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
@@ -193,17 +193,38 @@
         supabaseChannel = supabaseClient.channel(`school_running_room_${raceSessionId}`, { config: { broadcast: { self: true } } });
         supabaseChannel
             .on('broadcast', { event: 'heartbeat' }, payload => { 
-                trackpointHeartbeats[payload.payload.checkpoint_id] = Date.now(); 
+                // 接收來自分機 (everycone_cam) 的心跳包訊息
+                const cpNum = parseInt(String(payload.payload.checkpoint_id).replace('cp', ''));
+                trackpointHeartbeats[cpNum] = Date.now(); 
             })
             .on('broadcast', { event: 'checkpoint_trigger' }, payload => { 
-                handleRaceTrigger(payload.payload.student_id, payload.payload.checkpoint_id, payload.payload.timestamp); 
+                const cpNum = parseInt(String(payload.payload.checkpoint_id).replace('cp', ''));
+                handleRaceTrigger(payload.payload.student_id, cpNum, payload.payload.timestamp); 
             })
             .subscribe();
     }
 
-    // ⏱️ 開始 EveryCone 限時跑圈（6分鐘或9分鐘）
+    // ⏱️ 開始 EveryCone 限時跑圈（6分鐘或9分鐘）- 含全部分機連線驗證
     function startTimedRace() {
         if (isRaceStarted) return;
+        
+        // 🔒 連線防呆檢查：驗證選定的 Checkpoints 是否全數連線
+        const totalCps = parseInt(document.getElementById('cp-count-select').value);
+        const offlineCps = [];
+        const now = Date.now();
+
+        for (let i = 1; i <= totalCps; i++) {
+            if (now - (trackpointHeartbeats[i] || 0) >= 6000) {
+                offlineCps.push(`CP${i}`);
+            }
+        }
+
+        if (offlineCps.length > 0) {
+            alert(`⚠️ 無法開始比賽！\n目前有 ${offlineCps.length} 個檢查點未連線：[ ${offlineCps.join(', ')} ]。\n請確保所有分機 (everycone_cam) 均已掃描 QR Code 並成功連線！`);
+            speak("警告，有檢查點尚未連線，無法開始比賽");
+            return;
+        }
+
         const minutes = parseInt(document.getElementById('race-mode-select').value);
         secondsLeft = minutes * 60;
         isRaceStarted = true;
@@ -250,7 +271,7 @@
                 expectedCp: 1,
                 lapStartTime: null,
                 completedLaps: 0,
-                trackPoints: 0, // 通過的 Track Points 總計
+                trackPoints: 0, 
                 totalDuration: 0,
                 lapDetails: []
             };
@@ -258,9 +279,8 @@
 
         const runner = liveRaceData[studentId];
 
-        // 檢查順序過站
         if (cpId === runner.expectedCp) {
-            runner.trackPoints++; // 正確過站，Track Point +1
+            runner.trackPoints++; 
 
             if (cpId === 1) {
                 if (runner.lapStartTime === null) {
@@ -295,12 +315,10 @@
         return 1 + (laps - 6);
     }
 
-    // 🏆 結算與渲染排行榜
     function renderCurrentRaceRanking() {
         const tbody = document.getElementById('ranking-tbody');
         const summary = document.getElementById('ranking-summary');
 
-        // 過濾出有 Track Points 的參賽學生
         const activeStudentIds = Object.keys(liveRaceData).filter(id => liveRaceData[id].trackPoints > 0);
 
         if (activeStudentIds.length === 0) {
@@ -310,7 +328,6 @@
             return;
         }
 
-        // 排序規則：完成圈數多者優先；圈數相同比 Track Points；皆相同則比較總時間
         calculatedRankings = activeStudentIds.map(id => {
             const data = liveRaceData[id];
             const name = studentNameMap[id] || '未命名';
@@ -347,7 +364,6 @@
         summary.innerHTML = `🏁 <b>EveryCone 本次比賽已結算：</b> 共 ${calculatedRankings.length} 名學生統計完畢！`;
     }
 
-    // 📥 匯出包含 Track Points 與跑圈積分的 .CSV 檔
     function exportToCSV() {
         if (calculatedRankings.length === 0) {
             alert('尚無有效比賽排名數據可匯出！');
@@ -422,7 +438,6 @@
         }
     }
 
-    // 📱 生成連結至 everycone_cam.html 的 QR Code 網址
     function generateQRCodes() {
         const count = parseInt(document.getElementById('cp-count-select').value);
         const container = document.getElementById('qr-container');
