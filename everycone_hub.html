@@ -139,8 +139,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon code'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
@@ -190,21 +190,21 @@
     }
 
     function initHubRealtime() {
-        supabaseChannel = supabaseClient.channel(`school_running_room_${raceSessionId}`, { config: { broadcast: { self: true } } });
+        // 🛠️ 修正：將頻道名稱改為 school_cone_room，與 everycone_cam.html 完全匹配
+        supabaseChannel = supabaseClient.channel(`school_cone_room_${raceSessionId}`, { config: { broadcast: { self: true } } });
         supabaseChannel
             .on('broadcast', { event: 'heartbeat' }, payload => { 
-                // 接收來自分機 (everycone_cam) 的心跳包訊息
-                const cpNum = parseInt(String(payload.payload.checkpoint_id).replace('cp', ''));
+                const cpNum = parseInt(payload.payload.checkpoint_id);
                 trackpointHeartbeats[cpNum] = Date.now(); 
             })
             .on('broadcast', { event: 'checkpoint_trigger' }, payload => { 
-                const cpNum = parseInt(String(payload.payload.checkpoint_id).replace('cp', ''));
+                const cpNum = parseInt(payload.payload.checkpoint_id);
                 handleRaceTrigger(payload.payload.student_id, cpNum, payload.payload.timestamp); 
             })
             .subscribe();
     }
 
-    // ⏱️ 開始 EveryCone 限時跑圈（6分鐘或9分鐘）- 含全部分機連線驗證
+    // ⏱️ 開始 EveryCone 限時跑圈（6分鐘或9分鐘）- 含全部分機連線防呆驗證
     function startTimedRace() {
         if (isRaceStarted) return;
         
