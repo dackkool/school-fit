@@ -263,10 +263,20 @@
                     </div>
                     <div class="arrow-icon">➔</div>
                 </div>
+
+                <!-- 🌟 項目 4: 一分鐘大字跳 (新增選項) -->
+                <div class="exercise-card" onclick="navigateToExercise('jump.html')">
+                    <div class="exercise-icon">⭐</div>
+                    <div class="exercise-info">
+                        <div class="exercise-title">一分鐘大字跳</div>
+                        <div class="exercise-desc">AI 姿態辨識雙手雙腳開合跳 (自動計數)</div>
+                    </div>
+                    <div class="arrow-icon">➔</div>
+                </div>
             </div>
         </div>
 
-        <!-- 子分頁 2: 修改個人資料 (新增) -->
+        <!-- 子分頁 2: 修改個人資料 -->
         <div id="sub-profile" class="sub-view">
             <form onsubmit="handleUpdateProfile(event)" autocomplete="off">
                 <div class="input-group">
@@ -295,8 +305,8 @@
 
 <script>
     // --- 1. 請填入你自己的 Supabase 資料 ---
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const msgBox = document.getElementById('msg-box');
