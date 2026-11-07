@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>全班智慧跑圈統籌主機 | EveryRun Hub</title>
+    <title>全班智慧跑圈統籌主機 | EveryCone Hub</title>
     <!-- Supabase JS 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
@@ -30,7 +30,7 @@
         .qr-box { background: #fafafa; border: 1.5px dashed #1565c0; border-radius: 12px; padding: 10px; text-align: center; }
         .qr-box img { width: 120px; height: 120px; margin: 5px auto; display: block; }
 
-        #live-log { background: #fafafa; border: 1px solid #ddd; border-radius: 10px; height: 260px; overflow-y: auto; padding: 10px; font-size: 0.9rem; margin-bottom: 10px; }
+        #live-log { background: #fafafa; border: 1px solid #ddd; border-radius: 10px; height: 220px; overflow-y: auto; padding: 10px; font-size: 0.9rem; margin-bottom: 10px; }
         .log-item { padding: 6px 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
 
         .history-container { background: #fafafa; border: 1px solid #ddd; border-radius: 12px; padding: 15px; max-height: 400px; overflow-y: auto; }
@@ -44,13 +44,16 @@
 
         button.btn-primary { width: 100%; padding: 10px; font-size: 1rem; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background-color: #1565c0; margin-top: 5px; }
         button.btn-primary:hover { opacity: 0.9; }
+
+        /* EveryCone 賽事控制面板樣式 */
+        .control-panel { background: #e3f2fd; border: 1.5px solid #90caf9; border-radius: 12px; padding: 12px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     </style>
 </head>
 <body>
 
 <div id="main-card">
-    <h1>全班智慧跑圈統籌主機 (EveryRun Hub)</h1>
-    <div class="subtitle">獨立賽事現場統計・多站順序驗證・即時排行榜與 CSV 匯出 <span id="session-badge" style="color: #d32f2f; font-weight: bold;"></span></div>
+    <h1>全班智慧跑圈統籌主機 (EveryCone Hub)</h1>
+    <div class="subtitle">限時跑圈挑戰・Track Points 過站統計・多站順序驗證・即時排行榜與 CSV 匯出 <span id="session-badge" style="color: #d32f2f; font-weight: bold;"></span></div>
 
     <div class="status-grid" id="status-grid-container"></div>
 
@@ -62,19 +65,36 @@
 
     <!-- TAB 1: 獨立賽事實況監控 -->
     <div id="tab-monitor" class="tab-content active">
+        <!-- ⏱️ 限時模式選擇與控制 -->
+        <div class="control-panel">
+            <div style="flex: 1;">
+                <label style="font-size: 0.75rem; font-weight: bold; color: #1565c0; display: block; margin-bottom: 2px;">選擇限時模式：</label>
+                <select id="race-mode-select" style="padding: 6px; border-radius: 6px; border: 1px solid #90caf9; font-weight: bold; width: 100%;">
+                    <option value="6">6 分鐘限時跑</option>
+                    <option value="9">9 分鐘限時跑</option>
+                </select>
+            </div>
+            <div style="flex: 1; text-align: center;">
+                <div id="race-timer-display" style="font-size: 1.4rem; font-weight: bold; color: #d32f2f;">準備就緒</div>
+            </div>
+            <div style="flex: 1; display: flex; gap: 5px;">
+                <button class="btn-primary" id="start-race-btn" onclick="startTimedRace()" style="background-color: #2e7d32; margin: 0; padding: 8px;">▶️ 開始比賽</button>
+                <button class="btn-primary" onclick="resetCurrentRace()" style="background-color: #d32f2f; margin: 0; padding: 8px;">🔄 重置</button>
+            </div>
+        </div>
+
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <strong>📡 賽事進行中（各分站自動廣播）：</strong>
-            <button class="btn-primary" onclick="resetCurrentRace()" style="width: auto; padding: 4px 12px; font-size: 0.8rem; margin: 0; background-color: #d32f2f;">🔄 重置 / 開始新比賽</button>
+            <strong>📡 賽事進行中（各分站自動廣播 Track Points）：</strong>
         </div>
         <div id="live-log">
-            <div style="text-align: center; color: #888; padding: 30px;">比賽準備就緒，等待學生由 CP1 出發...</div>
+            <div style="text-align: center; color: #888; padding: 20px;">比賽準備就緒，設定時間並點擊「開始比賽」...</div>
         </div>
     </div>
 
     <!-- TAB 2: 生成分機 QR Code -->
     <div id="tab-qr" class="tab-content" style="display: none;">
         <div class="input-group">
-            <label>選擇總分站數量 (2 至 8 個)：</label>
+            <label>選擇總分站數量 (2 至 8 個 Checkpoints)：</label>
             <select id="cp-count-select" onchange="generateQRCodes(); updateStatusGrid();">
                 <option value="2">2 個檢查點 (CP1, CP2)</option>
                 <option value="3">3 個檢查點 (CP1, CP2, CP3)</option>
@@ -91,12 +111,12 @@
     <!-- TAB 3: 本次比賽排行榜 & CSV 匯出 -->
     <div id="tab-ranking" class="tab-content" style="display: none;">
         <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-            <button class="btn-primary" onclick="renderCurrentRaceRanking()" style="flex: 1; background-color: #2e7d32; margin: 0;">🏁 比賽完結 / 結算排行榜</button>
+            <button class="btn-primary" onclick="renderCurrentRaceRanking()" style="flex: 1; background-color: #2e7d32; margin: 0;">🏁 手動結算排行榜</button>
             <button class="btn-primary" onclick="exportToCSV()" style="flex: 1; background-color: #ff9800; margin: 0;">📥 下載 .CSV 成績單</button>
         </div>
         <div class="history-container">
             <div id="ranking-summary" style="margin-bottom: 10px; font-size: 0.9rem; color: #333; font-weight: bold;">
-                請點擊「比賽完結」進行排名結算。
+                請點擊「手動結算排行榜」或等待限時結束。
             </div>
             <table class="history-table">
                 <thead>
@@ -104,10 +124,10 @@
                         <th>名次</th>
                         <th>學生學號</th>
                         <th>學生姓名</th>
+                        <th>Track Points (過站數)</th>
                         <th>完成圈數</th>
                         <th>🏆 跑圈積分</th>
                         <th>總花費時間</th>
-                        <th>平均圈速</th>
                     </tr>
                 </thead>
                 <tbody id="ranking-tbody">
@@ -119,29 +139,33 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let supabaseChannel = null;
     let trackpointHeartbeats = {};
     let studentNameMap = {}; // 學號對應姓名的快取
 
-    // 🔑 產生唯一賽事 Session ID (確保多場同時舉行互不干擾)
+    // 🔑 產生 EveryCone 賽事房號
     const raceSessionId = 'race_' + Math.random().toString(36).substring(2, 9);
 
-    // 🏆 本次獨立賽事專用數據結構 (純記憶體運行)
+    // 🏆 EveryCone 獨立賽事數據結構
     let liveRaceData = {};
-    let calculatedRankings = []; // 儲存最終結算清單用作 CSV 匯出
+    let calculatedRankings = []; 
+
+    // ⏱️ 限時倒數計時變數
+    let raceInterval = null;
+    let secondsLeft = 0;
+    let isRaceStarted = false;
 
     window.addEventListener('DOMContentLoaded', async () => {
-        document.getElementById('session-badge').innerText = `[賽事房號: ${raceSessionId}]`;
+        document.getElementById('session-badge').innerText = `[ EveryCone 房號: ${raceSessionId}]`;
         updateStatusGrid();
         generateQRCodes();
         initHubRealtime();
         setInterval(checkTrackpointHealth, 2000);
 
-        // 載入學生姓名資料庫（純查詢對照用，不寫入往績）
         try {
             const { data } = await supabaseClient.from('students_db').select('student_id, name');
             if (data) {
@@ -166,7 +190,6 @@
     }
 
     function initHubRealtime() {
-        // 🔒 將 Realtime 頻道綁定 raceSessionId，實現多賽事隔離
         supabaseChannel = supabaseClient.channel(`school_running_room_${raceSessionId}`, { config: { broadcast: { self: true } } });
         supabaseChannel
             .on('broadcast', { event: 'heartbeat' }, payload => { 
@@ -178,7 +201,42 @@
             .subscribe();
     }
 
-    // 🚀 核心邏輯：獨立賽事多學生同時順序過點驗證
+    // ⏱️ 開始 EveryCone 限時跑圈（6分鐘或9分鐘）
+    function startTimedRace() {
+        if (isRaceStarted) return;
+        const minutes = parseInt(document.getElementById('race-mode-select').value);
+        secondsLeft = minutes * 60;
+        isRaceStarted = true;
+        document.getElementById('race-mode-select').disabled = true;
+        document.getElementById('start-race-btn').disabled = true;
+        document.getElementById('start-race-btn').style.backgroundColor = '#ccc';
+
+        speak(`EveryCone 比賽開始，限時 ${minutes} 分鐘，請加油！`);
+        const logBox = document.getElementById('live-log');
+        logBox.innerHTML = `<div class="log-item" style="color: #2e7d32; font-weight: bold;"><span>🚀 ${minutes} 分鐘 EveryCone 限時挑戰正式開始！</span></div>` + logBox.innerHTML;
+
+        raceInterval = setInterval(() => {
+            secondsLeft--;
+            const m = Math.floor(secondsLeft / 60);
+            const s = secondsLeft % 60;
+            document.getElementById('race-timer-display').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+
+            if (secondsLeft === 60) {
+                speak("最後一分鐘，堅持下去！");
+            }
+
+            if (secondsLeft <= 0) {
+                clearInterval(raceInterval);
+                isRaceStarted = false;
+                document.getElementById('race-timer-display').innerText = "比賽結束";
+                speak("時間到！EveryCone 比賽結束，請停止跑步！");
+                logBox.innerHTML = `<div class="log-item" style="color: #d32f2f; font-weight: bold;"><span>🏁 時間到！比賽結束，正在計算總 Track Points 及圈數...</span></div>` + logBox.innerHTML;
+                renderCurrentRaceRanking(); // 自動結算排行榜
+            }
+        }, 1000);
+    }
+
+    // 🚀 Track Point 與圈數順序觸發處理
     function handleRaceTrigger(studentId, cpId, timestamp) {
         const totalCps = parseInt(document.getElementById('cp-count-select').value);
         const logBox = document.getElementById('live-log');
@@ -187,12 +245,12 @@
 
         if (logBox.innerHTML.includes('比賽準備就緒')) logBox.innerHTML = '';
 
-        // 若為新學生，初始化該生數據
         if (!liveRaceData[studentId]) {
             liveRaceData[studentId] = {
                 expectedCp: 1,
                 lapStartTime: null,
                 completedLaps: 0,
+                trackPoints: 0, // 通過的 Track Points 總計
                 totalDuration: 0,
                 lapDetails: []
             };
@@ -200,53 +258,50 @@
 
         const runner = liveRaceData[studentId];
 
-        // 順序驗證邏輯
+        // 檢查順序過站
         if (cpId === runner.expectedCp) {
+            runner.trackPoints++; // 正確過站，Track Point +1
+
             if (cpId === 1) {
                 if (runner.lapStartTime === null) {
-                    // 起跑出發
                     runner.lapStartTime = timestamp;
-                    logBox.innerHTML = `<div class="log-item"><span>🚀 學生 <b>${studentName} (${studentId})</b> 從 <b>CP1 起點</b> 出發！</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
+                    logBox.innerHTML = `<div class="log-item"><span>🚀 學生 <b>${studentName} (${studentId})</b> 出發過起點 (CP1)！</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
                     speak(`${studentName} 起跑`);
                 } else {
-                    // 完成一圈
                     const lapDuration = parseFloat(((timestamp - runner.lapStartTime) / 1000).toFixed(2));
                     runner.completedLaps++;
                     runner.totalDuration += lapDuration;
                     runner.lapDetails.push(lapDuration);
 
-                    logBox.innerHTML = `<div class="log-item" style="background: #e8f5e9;"><span>🏆 <b>${studentName} (${studentId})</b> 完成第 <b>${runner.completedLaps}</b> 圈！圈速: <b>${lapDuration} 秒</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
+                    logBox.innerHTML = `<div class="log-item" style="background: #e8f5e9;"><span>🏆 <b>${studentName} (${studentId})</b> 完成第 <b>${runner.completedLaps}</b> 圈！(累積 CP: ${runner.trackPoints}) 圈速: <b>${lapDuration} 秒</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
                     speak(`${studentName} 完成第 ${runner.completedLaps} 圈`);
 
-                    runner.lapStartTime = timestamp; // 設定下一圈起跑點
+                    runner.lapStartTime = timestamp;
                 }
             } else {
-                // 通過中途檢查點
-                logBox.innerHTML = `<div class="log-item"><span>學生 <b>${studentName} (${studentId})</b> 通過 <b>檢查點 ${cpId}</b></span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
+                logBox.innerHTML = `<div class="log-item"><span>學生 <b>${studentName} (${studentId})</b> 通過 <b>檢查點 ${cpId}</b> (CP 數: ${runner.trackPoints})</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
                 speak(`${studentName} 通過檢查點 ${cpId}`);
             }
 
-            // 更新預期下一站
             runner.expectedCp = (cpId % totalCps) + 1;
         } else {
-            // 順序不符 (跳站)
             logBox.innerHTML = `<div class="log-item" style="color: #d32f2f;"><span>⚠️ 順序提示：${studentName} 應過 CP${runner.expectedCp}，卻收到 CP${cpId}</span><span style="color:#666;">${timeStr}</span></div>` + logBox.innerHTML;
         }
     }
 
-    // 🏆 計算跑圈積分：6圈得1分，之後每多1圈多1分（未滿6圈為0分）
+    // 🏆 EveryCone 計分邏輯：6圈得1分，之後每多1圈多1分（未滿6圈為0分）
     function calculateRunningScore(laps) {
         if (laps < 6) return 0;
         return 1 + (laps - 6);
     }
 
-    // 🏆 計算與渲染本次獨立賽事排行榜（只顯示有被偵測到的參加者，即 completedLaps > 0）
+    // 🏆 結算與渲染排行榜
     function renderCurrentRaceRanking() {
         const tbody = document.getElementById('ranking-tbody');
         const summary = document.getElementById('ranking-summary');
 
-        // 過濾出至少完成 1 圈（有被偵測到過點）的參賽者
-        const activeStudentIds = Object.keys(liveRaceData).filter(id => liveRaceData[id].completedLaps > 0);
+        // 過濾出有 Track Points 的參賽學生
+        const activeStudentIds = Object.keys(liveRaceData).filter(id => liveRaceData[id].trackPoints > 0);
 
         if (activeStudentIds.length === 0) {
             tbody.innerHTML = `<tr><td colspan="7" style="color: #888; padding: 20px;">賽事進行中，尚無有成績的參賽記錄</td></tr>`;
@@ -255,22 +310,22 @@
             return;
         }
 
-        // 轉換為陣列並進行排序 (完成圈數多者優先；若圈數相同，則總時間少者優先)
+        // 排序規則：完成圈數多者優先；圈數相同比 Track Points；皆相同則比較總時間
         calculatedRankings = activeStudentIds.map(id => {
             const data = liveRaceData[id];
             const name = studentNameMap[id] || '未命名';
-            const avgSpeed = data.completedLaps > 0 ? (data.totalDuration / data.completedLaps).toFixed(2) : '0.00';
-            const score = calculateRunningScore(data.completedLaps); // 計算積分
+            const score = calculateRunningScore(data.completedLaps);
             return {
                 studentId: id,
                 name: name,
+                trackPoints: data.trackPoints,
                 completedLaps: data.completedLaps,
                 score: score,
-                totalDuration: parseFloat(data.totalDuration.toFixed(2)),
-                avgSpeed: avgSpeed
+                totalDuration: parseFloat(data.totalDuration.toFixed(2))
             };
         }).sort((a, b) => {
             if (b.completedLaps !== a.completedLaps) return b.completedLaps - a.completedLaps;
+            if (b.trackPoints !== a.trackPoints) return b.trackPoints - a.trackPoints;
             return a.totalDuration - b.totalDuration;
         });
 
@@ -281,29 +336,29 @@
                     <td><b>#${index + 1}</b></td>
                     <td>${item.studentId}</td>
                     <td>${item.name}</td>
+                    <td><b>${item.trackPoints}</b> 站</td>
                     <td><span style="background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 4px; font-weight: bold;">${item.completedLaps} 圈</span></td>
                     <td><b style="color: #2e7d32;">${item.score} 分</b></td>
                     <td><b>${item.totalDuration}</b> 秒</td>
-                    <td>${item.avgSpeed} 秒/圈</td>
                 </tr>
             `;
         });
 
-        summary.innerHTML = `🏁 <b>本次比賽已結算：</b> 共 ${calculatedRankings.length} 名有成績的學生已統計完畢！`;
+        summary.innerHTML = `🏁 <b>EveryCone 本次比賽已結算：</b> 共 ${calculatedRankings.length} 名學生統計完畢！`;
     }
 
-    // 📥 將排行榜匯出為 .CSV 檔案
+    // 📥 匯出包含 Track Points 與跑圈積分的 .CSV 檔
     function exportToCSV() {
         if (calculatedRankings.length === 0) {
             alert('尚無有效比賽排名數據可匯出！');
             return;
         }
 
-        let csvContent = "\uFEFF"; // 加入 UTF-8 BOM 避免 Excel 中文亂碼
-        csvContent += "名次,學生學號,學生姓名,完成圈數,跑圈積分,總花費時間(秒),平均圈速(秒/圈)\n";
+        let csvContent = "\uFEFF"; 
+        csvContent += "名次,學生學號,學生姓名,TrackPoints(過站數),完成圈數,跑圈積分,總花費時間(秒)\n";
 
         calculatedRankings.forEach((item, index) => {
-            csvContent += `${index + 1},"${item.studentId}","${item.name}",${item.completedLaps},${item.score},${item.totalDuration},${item.avgSpeed}\n`;
+            csvContent += `${index + 1},"${item.studentId}","${item.name}",${item.trackPoints},${item.completedLaps},${item.score},${item.totalDuration}\n`;
         });
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -312,17 +367,25 @@
         
         const today = new Date().toISOString().slice(0, 10);
         link.setAttribute("href", url);
-        link.setAttribute("download", `EveryRun_Race_${raceSessionId}_${today}.csv`);
+        link.setAttribute("download", `EveryCone_Race_${raceSessionId}_${today}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     }
 
     function resetCurrentRace() {
-        if (confirm('確定要重置並開始一場全新的比賽嗎？目前的過點記錄將會清空！')) {
+        if (confirm('確定要重置並開始一場全新的 EveryCone 比賽嗎？過點與計時紀錄將被清空！')) {
+            clearInterval(raceInterval);
+            isRaceStarted = false;
+            secondsLeft = 0;
+            document.getElementById('race-timer-display').innerText = "準備就緒";
+            document.getElementById('race-mode-select').disabled = false;
+            document.getElementById('start-race-btn').disabled = false;
+            document.getElementById('start-race-btn').style.backgroundColor = '#2e7d32';
+
             liveRaceData = {};
             calculatedRankings = [];
-            document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #888; padding: 30px;">比賽已重置，等待學生由 CP1 出發...</div>`;
+            document.getElementById('live-log').innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">比賽已重置，設定時間並點擊「開始比賽」...</div>`;
             renderCurrentRaceRanking();
         }
     }
@@ -359,15 +422,14 @@
         }
     }
 
-    // 📱 生成附帶 session 參數的 QR Code 網址
+    // 📱 生成連結至 everycone_cam.html 的 QR Code 網址
     function generateQRCodes() {
         const count = parseInt(document.getElementById('cp-count-select').value);
         const container = document.getElementById('qr-container');
         container.innerHTML = '';
-        const baseUrl = window.location.origin + window.location.pathname.replace('everyrun_hub.html', 'everyrun_cam.html');
+        const baseUrl = window.location.origin + window.location.pathname.replace('everycone_hub.html', 'everycone_cam.html');
         
         for (let i = 1; i <= count; i++) {
-            // 🔗 網址自動帶入 role 與 session 參數
             const targetUrl = `${baseUrl}?role=cp${i}&session=${raceSessionId}`;
             const box = document.createElement('div');
             box.className = 'qr-box';
