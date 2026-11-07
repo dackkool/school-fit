@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>一分鐘大字跳挑戰 | AI 體適能</title>
+    <!-- MediaPipe 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <!-- Supabase JS 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
+        body {
+            margin: 0;
+            padding: 8px;
+            background-color: #e8f5e9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #app-container {
+            position: relative;
+            width: 100%;
+            max-width: 1100px;
+            background-color: white;
+            border-radius: 16px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: row;
+            height: 92vh;
+            max-height: 720px;
+            overflow: hidden;
+        }
+
+        /* 左側：視像鏡頭區 */
+        #video-pane {
+            position: relative;
+            background-color: #111;
+            width: 58%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: width 0.4s ease;
+        }
+
+        .input_video { display: none; }
+        .output_canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* 狀態指示燈 */
+        #body-status-badge {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: white;
+            background-color: #f44336;
+            z-index: 20;
+        }
+
+        /* 準備倒數大字體畫面提示 */
+        #ready-countdown-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 5rem;
+            font-weight: bold;
+            color: #ffeb3b;
+            text-shadow: 0 4px 10px rgba(0,0,0,0.8);
+            z-index: 25;
+            display: none;
+            pointer-events: none;
+        }
+
+        /* 沉浸式 HUD（挑戰開始時計數與計時懸浮在鏡頭上） */
+        #immersive-hud {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: none;
+            gap: 10px;
+            z-index: 20;
+        }
+        .hud-card {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 6px 14px;
+            border-radius: 12px;
+            text-align: center;
+            color: white;
+            backdrop-filter: blur(4px);
+        }
+        .hud-title { font-size: 0.65rem; color: #aaa; }
+        .hud-value { font-size: 1.5rem; font-weight: bold; }
+
+        /* 右側：功能操作面板 */
+        #ui-pane {
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            background-color: #fff;
+            width: 42%;
+            height: 100%;
+            overflow-y: auto;
+            transition: transform 0.4s ease, width 0.4s ease;
+        }
+
+        /* 狀態一：挑戰中 - 隱藏右側面板，左側鏡頭最大化滿版 */
+        #app-container.challenge-active #video-pane {
+            width: 100% !important;
+        }
+        #app-container.challenge-active #ui-pane {
+            position: absolute;
+            right: -100%;
+            width: 42%;
+            height: 100%;
+            pointer-events: none;
+        }
+        #app-container.challenge-active #immersive-hud {
+            display: flex !important;
+        }
+
+        /* 狀態二：歷史記錄 Tab - 隱藏鏡頭，面板滿版 */
+        #app-container.full-ui #video-pane {
+            display: none !important;
+        }
+        #app-container.full-ui #ui-pane {
+            width: 100% !important;
+            max-width: 850px;
+            margin: 0 auto;
+        }
+
+        /* Tab 導航列 */
+        .tab-header {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 8px;
+            flex-shrink: 0;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 10px 4px;
+            background: none;
+            border: none;
+            font-size: 1rem;
+            font-weight: bold;
+            color: #888;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .tab-btn.active {
+            color: #2e7d32;
+            border-bottom: 3.5px solid #2e7d32;
+        }
+
+        .tab-content { display: none; flex-direction: column; justify-content: space-between; flex: 1; }
+        .tab-content.active { display: flex; }
+
+        h1 { color: #2e7d32; text-align: center; font-size: 1.3rem; margin: 0 0 2px 0; }
+        .subtitle { font-size: 0.75rem; color: #666; text-align: center; margin-bottom: 6px; }
+        
+        .input-group { margin-bottom: 6px; }
+        .input-group label { font-size: 0.85rem; color: #444; font-weight: bold; display: block; margin-bottom: 3px; }
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 8px 10px;
+            font-size: 1rem;
+            border-radius: 8px;
+            border: 1.5px solid #ccc;
+        }
+
+        #score-board {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background-color: #e8f5e9;
+            padding: 8px;
+            border-radius: 12px;
+            margin: 6px 0;
+        }
+
+        #timer { font-size: 1.6rem; color: #ff9800; font-weight: bold; }
+        #jump-count { font-size: 2.8rem; color: #2e7d32; font-weight: bold; }
+
+        #feedback {
+            background-color: #fff9c4;
+            padding: 8px 10px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #333;
+            border: 1.5px solid #fff176;
+            min-height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 6px;
+        }
+
+        .tips-box {
+            font-size: 0.78rem;
+            color: #37474f;
+            background-color: #e3f2fd;
+            padding: 8px;
+            border-radius: 8px;
+            margin: 4px 0;
+            line-height: 1.3;
+        }
+
+        /* 歷史頁面與折線圖樣式 */
+        #chart-container {
+            width: 100%;
+            height: 140px;
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            display: none;
+            padding: 5px;
+        }
+
+        #history-box {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 140px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 8px;
+            margin-bottom: 8px;
+            background-color: #fafafa;
+        }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.95rem;
+        }
+        .trend-card {
+            background-color: #e8f5e9;
+            border: 1px solid #c8e6c9;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 0.88rem;
+            color: #2e7d32;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+
+        button.action-btn {
+            width: 100%;
+            padding: 10px;
+            font-size: 1.05rem;
+            border: none;
+            border-radius: 22px;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            background-color: #2e7d32;
+            margin-top: 4px;
+        }
+        button.action-btn:disabled { background-color: #ccc; cursor: not-allowed; }
+        button.action-btn:hover:not(:disabled) { opacity: 0.9; }
+
+        @media screen and (max-width: 768px) {
+            body {
+                padding: 4px;
+                align-items: flex-start;
+                min-height: 100vh;
+                overflow-y: auto !important;
+            }
+        
+            #app-container {
+                flex-direction: column !important;
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
+            }
+
+            #video-pane {
+                width: 100% !important;
+                height: 260px !important;
+                flex-shrink: 0;
+            }
+
+            #ui-pane {
+                width: 100% !important;
+                height: auto !important;
+                max-height: none !important;
+                overflow-y: visible !important;
+                padding-bottom: 60px;
+            }
+        
+            #app-container.challenge-active #video-pane {
+                width: 100% !important;
+                height: 100vh !important;
+                position: fixed;
+                top: 0;
+                left: 0;
+                z-index: 100;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <!-- 左側：視像鏡頭區 -->
+    <div id="video-pane">
+        <div id="body-status-badge">❌ 請調整手機，全身正面入鏡</div>
+        <div id="ready-countdown-overlay">3</div>
+        <div id="immersive-hud">
+            <div class="hud-card">
+                <div class="hud-title">時間</div>
+                <div id="hud-timer" class="hud-value" style="color: #ff9800;">60s</div>
+            </div>
+            <div class="hud-card">
+                <div class="hud-title">次數</div>
+                <div id="hud-count" class="hud-value" style="color: #2e7d32;">0</div>
+            </div>
+        </div>
+        <video class="input_video" playsinline></video>
+        <canvas class="output_canvas"></canvas>
+    </div>
+
+    <!-- 右側：功能操作面板 -->
+    <div id="ui-pane">
+        <div class="tab-header">
+            <button class="tab-btn active" onclick="switchTab('challenge')">🤖 AI 挑戰區</button>
+            <button class="tab-btn" onclick="switchTab('history')">📊 過往紀錄與分析</button>
+        </div>
+
+        <!-- TAB 1: AI 挑戰區 -->
+        <div id="tab-challenge" class="tab-content active">
+            <div>
+                <h1>一分鐘大字跳挑戰</h1>
+                <div class="subtitle">全身正面入鏡，雙手雙腳同步開合跳躍</div>
+            </div>
+
+            <div class="input-group">
+                <label>學生學號：</label>
+                <input type="text" id="student-id" placeholder="例如: S001">
+            </div>
+
+            <div class="input-group">
+                <label>選擇相機鏡頭：</label>
+                <select id="camera-select">
+                    <option value="">正在偵測可用鏡頭...</option>
+                </select>
+            </div>
+
+            <div class="tips-box">
+                💡 <b>要點：</b>請站在距離鏡頭 2-3 米處確保全身正面入鏡。跳起時雙手雙腳打開呈「大」字形，落地合攏算完成一次。
+            </div>
+
+            <div id="score-board">
+                <div>
+                    <div style="font-size:0.75rem; color:#666;">剩餘時間</div>
+                    <div id="timer">60s</div>
+                </div>
+                <div>
+                    <div style="font-size:0.75rem; color:#666;">有效次數</div>
+                    <div id="jump-count">0</div>
+                </div>
+            </div>
+
+            <div id="feedback">請退後讓鏡頭拍到全身並保持站立姿勢，將自動開始倒數。</div>
+
+            <div>
+                <button id="start-btn" class="action-btn" style="background-color: #ff9800;" disabled>請先站到鏡頭前讓全身入鏡</button>
+                <button id="stop-btn" class="action-btn" style="background-color: #f44336; display: none;">結束並上傳成績</button>
+            </div>
+        </div>
+
+        <!-- TAB 2: 過往紀錄與分析區 -->
+        <div id="tab-history" class="tab-content" style="display: none;">
+            <div>
+                <h1>個人進度與趨勢分析</h1>
+                <div class="subtitle">查看過往大字跳成績趨勢及智能訓練建議</div>
+            </div>
+
+            <div id="trend-analysis" class="trend-card">
+                📈 <b>趨勢分析：</b>請先在挑戰區輸入學號並完成挑戰。
+            </div>
+
+            <div id="chart-container">
+                <canvas id="trend-chart"></canvas>
+            </div>
+
+            <div id="history-box">
+                <div style="text-align: center; color: #888; padding: 20px;">尚無紀錄</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 1. Supabase 資料設定 ---
+    const SUPABASE_URL = 'supa url';  
+    const SUPABASE_ANON_KEY = 'anon key';  
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // --- 2. 檢查 Session 與學號一致性 ---
+    window.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlStudentId = urlParams.get('student_id');
+        const localStudentId = sessionStorage.getItem('current_student_id');
+
+        if (!localStudentId || (urlStudentId && urlStudentId !== localStudentId)) {
+            alert('⚠️ 偵測到身分不符或未登入，請先重新登入！');
+            window.location.href = 'index.html';
+            return;
+        }
+
+        const activeStudentId = localStudentId;
+        const studentIdInput = document.getElementById('student-id');
+        if (studentIdInput) {
+            studentIdInput.value = activeStudentId;
+            studentIdInput.disabled = true;
+        }
+
+        initCameras();
+    });
+
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const canvasCtx = canvasElement.getContext('2d');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const countDisplay = document.getElementById('jump-count');
+    const timerDisplay = document.getElementById('timer');
+    const hudCount = document.getElementById('hud-count');
+    const hudTimer = document.getElementById('hud-timer');
+    const feedbackDisplay = document.getElementById('feedback');
+    const studentIdInput = document.getElementById('student-id');
+    const bodyStatusBadge = document.getElementById('body-status-badge');
+    const appContainer = document.getElementById('app-container');
+    const readyCountdownOverlay = document.getElementById('ready-countdown-overlay');
+    const cameraSelect = document.getElementById('camera-select');
+
+    let jumpCounter = 0;
+    let stage = 'close'; // 判定狀態：close (合攏/準備) 或 open (大字開)
+    let isRunning = false;
+    let isCountdownActive = false;
+    let fullBodyTimer = null;
+    let timeLeft = 60;
+    let countdownInterval;
+    let currentStream = null;
+    let cameraAnimationId = null;
+
+    async function initCameras() {
+        try {
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            tempStream.getTracks().forEach(track => track.stop());
+
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+            cameraSelect.innerHTML = '';
+            if (videoDevices.length === 0) {
+                cameraSelect.innerHTML = '<option value="">找不到可用鏡頭</option>';
+                return;
+            }
+
+            videoDevices.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `鏡頭 ${index + 1}`;
+                cameraSelect.appendChild(option);
+            });
+
+            startSelectedCamera(videoDevices[0].deviceId);
+
+            cameraSelect.addEventListener('change', (e) => {
+                startSelectedCamera(e.target.value);
+            });
+
+        } catch (err) {
+            console.error('無法取得相機列表:', err);
+            cameraSelect.innerHTML = '<option value="">無法存取相機權限</option>';
+            startSelectedCamera(null);
+        }
+    }
+
+    async function startSelectedCamera(deviceId) {
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+        if (cameraAnimationId) {
+            cancelAnimationFrame(cameraAnimationId);
+        }
+
+        const constraints = {
+            video: deviceId ? { deviceId: { exact: deviceId } } : { width: 640, height: 480 }
+        };
+
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            videoElement.srcObject = currentStream;
+            await videoElement.play();
+
+            async function renderFrame() {
+                if (videoElement.readyState >= 2) {
+                    await pose.send({ image: videoElement });
+                }
+                cameraAnimationId = requestAnimationFrame(renderFrame);
+            }
+            renderFrame();
+
+        } catch (err) {
+            console.error('啟動選定鏡頭失敗:', err);
+            alert('切換鏡頭失敗，請檢查相機權限或裝置是否被佔用。');
+        }
+    }
+
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+            content.style.display = 'none';
+        });
+
+        if (tabName === 'challenge') {
+            appContainer.classList.remove('full-ui');
+            document.querySelectorAll('.tab-btn')[0].classList.add('active');
+            const target = document.getElementById('tab-challenge');
+            target.classList.add('active');
+            target.style.display = 'flex';
+        } else {
+            if (isRunning) {
+                alert('挑戰正在進行中，請先完成或結束挑戰！');
+                return;
+            }
+            appContainer.classList.add('full-ui');
+            document.querySelectorAll('.tab-btn')[1].classList.add('active');
+            const target = document.getElementById('tab-history');
+            target.classList.add('active');
+            target.style.display = 'flex';
+            
+            fetchStudentHistory();
+        }
+    }
+
+    const synth = window.speechSynthesis;
+    const speak = (text) => {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'zh-HK';
+        synth.cancel();
+        synth.speak(utter);
+    };
+
+    // 檢查全身正面主要關鍵點 (頭部、肩膀、手腕、髖部、腳踝)
+    function checkFullBody(landmarks) {
+        const keyPoints = [0, 11, 12, 15, 16, 23, 24, 27, 28]; 
+        return keyPoints.every(idx => landmarks[idx] && landmarks[idx].visibility > 0.45);
+    }
+
+    function onResults(results) {
+        canvasElement.width = videoElement.videoWidth || 640;
+        canvasElement.height = videoElement.videoHeight || 480;
+
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        
+        canvasCtx.scale(-1, 1);
+        canvasCtx.translate(-canvasElement.width, 0);
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.poseLandmarks) {
+            drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
+            drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', lineWidth: 1, radius: 4});
+
+            const isFullBodyVisible = checkFullBody(results.poseLandmarks);
+
+            if (!isRunning && !isCountdownActive) {
+                const studentId = studentIdInput.value.trim();
+                if (!studentId) {
+                    bodyStatusBadge.style.backgroundColor = '#ff9800';
+                    bodyStatusBadge.innerText = '⚠️ 請先輸入學號';
+                    feedbackDisplay.innerText = '請先在上方輸入學號，再退後讓全身入鏡。';
+                    canvasCtx.restore();
+                    return;
+                }
+
+                if (isFullBodyVisible) {
+                    bodyStatusBadge.style.backgroundColor = '#2e7d32';
+                    bodyStatusBadge.innerText = '✅ 全身已入鏡，準備開始！';
+                    feedbackDisplay.innerText = '保持姿勢，即將自動開始倒數...';
+                    
+                    if (!fullBodyTimer) {
+                        startAutoCountdownTimer();
+                    }
+                } else {
+                    bodyStatusBadge.style.backgroundColor = '#f44336';
+                    bodyStatusBadge.innerText = '❌ 請退後，全身需入鏡';
+                    feedbackDisplay.innerText = '請退後讓鏡頭完整拍到你的全身（正面）。';
+                    
+                    cancelAutoCountdownTimer();
+                }
+                canvasCtx.restore();
+                return;
+            }
+
+            // 挑戰中：大字跳（開合跳）判定邏輯
+            // 利用手腕與肩膀的橫向距離、腳踝與髖部的橫向距離來判斷是否展開成「大」字
+            if (isRunning) {
+                const lWrist = results.poseLandmarks[15];
+                const rWrist = results.poseLandmarks[16];
+                const lAnkle = results.poseLandmarks[27];
+                const rAnkle = results.poseLandmarks[28];
+                const lShoulder = results.poseLandmarks[11];
+                const rShoulder = results.poseLandmarks[12];
+
+                // 計算手腕寬度與肩膀寬度的比例，以及腳踝間距
+                const shoulderWidth = Math.abs(lShoulder.x - rShoulder.x);
+                const wristDistance = Math.abs(lWrist.x - rWrist.x);
+                const ankleDistance = Math.abs(lAnkle.x - rAnkle.x);
+
+                // 門檻數值：手腕張開大於肩膀寬度顯著倍數，且腳踝張開
+                const isOpenPose = (wristDistance > shoulderWidth * 1.5) && (ankleDistance > shoulderWidth * 0.8);
+                const isClosePose = wristDistance < shoulderWidth * 1.2 && ankleDistance < shoulderWidth * 0.6;
+
+                if (stage === 'close' && isOpenPose) {
+                    stage = 'open';
+                    feedbackDisplay.innerText = "⭐ 雙手雙腳張開！做得好！";
+                } else if (stage === 'open' && isClosePose) {
+                    stage = 'close';
+                    jumpCounter++;
+                    countDisplay.innerText = jumpCounter;
+                    hudCount.innerText = jumpCounter;
+                    speak(jumpCounter.toString());
+                    feedbackDisplay.innerText = "👍 落地合攏！繼續保持節奏！";
+                }
+            }
+        } else {
+            if (!isRunning && !isCountdownActive) {
+                bodyStatusBadge.style.backgroundColor = '#f44336';
+                bodyStatusBadge.innerText = '❌ 未偵測到人影';
+                cancelAutoCountdownTimer();
+            }
+        }
+        canvasCtx.restore();
+    }
+
+    const pose = new Pose({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    pose.onResults(onResults);
+
+    function startAutoCountdownTimer() {
+        if (fullBodyTimer) return;
+        let secLeft = 3;
+        feedbackDisplay.innerText = `👍 全身已就位！ ${secLeft} 秒後開始自動倒數...`;
+
+        fullBodyTimer = setTimeout(() => {
+            triggerPreCountdown();
+        }, 3000);
+    }
+
+    function cancelAutoCountdownTimer() {
+        if (fullBodyTimer) {
+            clearTimeout(fullBodyTimer);
+            fullBodyTimer = null;
+        }
+    }
+
+    function triggerPreCountdown() {
+        cancelAutoCountdownTimer();
+        isCountdownActive = true;
+        bodyStatusBadge.style.backgroundColor = '#ff9800';
+        bodyStatusBadge.innerText = '🔥 準備開始！';
+        
+        let count = 3;
+        readyCountdownOverlay.style.display = 'block';
+        readyCountdownOverlay.innerText = count;
+        speak(count.toString());
+        feedbackDisplay.innerText = `準備開始挑戰！`;
+
+        const preTimer = setInterval(() => {
+            count--;
+            if (count > 0) {
+                readyCountdownOverlay.innerText = count;
+                speak(count.toString());
+            } else if (count === 0) {
+                readyCountdownOverlay.innerText = '開始！';
+                speak('開始');
+            } else {
+                clearInterval(preTimer);
+                readyCountdownOverlay.style.display = 'none';
+                startChallenge();
+            }
+        }, 1000);
+    }
+
+    function startChallenge() {
+        const studentId = studentIdInput.value.trim();
+        if (!studentId) {
+            alert('請先輸入學號才可以開始挑戰！');
+            isCountdownActive = false;
+            return;
+        }
+
+        appContainer.classList.add('challenge-active');
+
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+        studentIdInput.disabled = true;
+        
+        jumpCounter = 0;
+        countDisplay.innerText = '0';
+        hudCount.innerText = '0';
+        timeLeft = 60;
+        timerDisplay.innerText = '60s';
+        hudTimer.innerText = '60s';
+        isRunning = true;
+        isCountdownActive = false;
+        
+        speak("挑戰開始！加油！");
+        feedbackDisplay.innerText = "挑戰開始！大字跳起來！";
+
+        countdownInterval = setInterval(() => {
+            timeLeft--;
+            timerDisplay.innerText = `${timeLeft}s`;
+            hudTimer.innerText = `${timeLeft}s`;
+
+            if (timeLeft === 10) {
+                speak("最後十秒，加油！堅持住！");
+                feedbackDisplay.innerText = "🔥 最後 10 秒衝刺！";
+            } else if (timeLeft <= 3 && timeLeft > 0) {
+                speak(timeLeft.toString());
+            }
+
+            if (timeLeft <= 0) {
+                endChallenge();
+            }
+        }, 1000);
+    }
+
+    stopBtn.addEventListener('click', endChallenge);
+
+    async function endChallenge() {
+        clearInterval(countdownInterval);
+        isRunning = false;
+        isCountdownActive = false;
+        
+        appContainer.classList.remove('challenge-active');
+        readyCountdownOverlay.style.display = 'none';
+
+        const studentId = studentIdInput.value.trim();
+        feedbackDisplay.innerText = `正在上傳成績至雲端...`;
+
+        let praise = "";
+        if (jumpCounter >= 40) praise = "太厲害了！跳躍力驚人，體能滿分！";
+        else if (jumpCounter >= 25) praise = "做得很好！充滿活力的表現！";
+        else praise = "完成挑戰！多加練習跳躍協調性會更好！";
+
+        speak(`時間到！總共做了 ${jumpCounter} 下。${praise}`);
+
+        try {
+            // 注意 category 改為 'jump' 以區分不同的項目記錄
+            const { data, error } = await supabaseClient
+                .from('fitness_records')
+                .insert([{ 
+                    student_id: studentId, 
+                    category: 'jump', 
+                    score_value: parseFloat(jumpCounter) 
+                }]);
+
+            if (error) {
+                console.error(error);
+                feedbackDisplay.innerText = `上傳失敗：${error.message}`;
+            } else {
+                feedbackDisplay.innerText = `🎉 成績已成功上傳！完成 ${jumpCounter} 下。`;
+            }
+        } catch (err) {
+            console.error(err);
+            feedbackDisplay.innerText = `網絡連線錯誤！`;
+        }
+
+        startBtn.style.display = 'block';
+        startBtn.innerText = '請站在鏡頭前自動開始';
+        startBtn.disabled = true;
+        stopBtn.style.display = 'none';
+        studentIdInput.disabled = false;
+    }
+
+    function drawTrendChart(scores) {
+        const container = document.getElementById('chart-container');
+        const canvas = document.getElementById('trend-chart');
+        container.style.display = 'block';
+        
+        canvas.width = container.clientWidth - 10;
+        canvas.height = container.clientHeight - 10;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (scores.length < 2) {
+            ctx.fillStyle = "#888";
+            ctx.font = "12px sans-serif";
+            ctx.fillText("數據不足（至少需 2 次紀錄繪製折線圖）", 20, 70);
+            return;
+        }
+
+        const chronoScores = [...scores].reverse();
+        const max = Math.max(...chronoScores, 10);
+        const padding = 25;
+        const w = canvas.width - padding * 2;
+        const h = canvas.height - padding * 2;
+
+        ctx.beginPath();
+        ctx.strokeStyle = "#2e7d32";
+        ctx.lineWidth = 3;
+
+        chronoScores.forEach((s, idx) => {
+            const x = padding + (idx / (chronoScores.length - 1)) * w;
+            const y = canvas.height - padding - (s / max) * h;
+
+            if (idx === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        chronoScores.forEach((s, idx) => {
+            const x = padding + (idx / (chronoScores.length - 1)) * w;
+            const y = canvas.height - padding - (s / max) * h;
+
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = "#4caf50";
+            ctx.fill();
+
+            ctx.fillStyle = "#333";
+            ctx.font = "bold 11px sans-serif";
+            ctx.fillText(s + "下", x - 10, y - 8);
+        });
+    }
+
+    async function fetchStudentHistory() {
+        const queryId = studentIdInput.value.trim();
+        const historyBox = document.getElementById('history-box');
+        const trendAnalysis = document.getElementById('trend-analysis');
+
+        if (!queryId) {
+            trendAnalysis.innerHTML = '📈 <b>趨勢分析：</b>請先在「AI 挑戰區」輸入學號。';
+            historyBox.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">尚未輸入學號</div>';
+            document.getElementById('chart-container').style.display = 'none';
+            return;
+        }
+
+        historyBox.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">載入中...</div>';
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('fitness_records')
+                .select('*')
+                .eq('student_id', queryId)
+                .eq('category', 'jump') // 查詢時過濾大字跳 category
+                .order('created_at', { ascending: false })
+                .limit(10);
+
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                historyBox.innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">找不到學號 [${queryId}] 的大字跳紀錄</div>`;
+                trendAnalysis.innerHTML = `📈 <b>學號：${queryId}</b> 尚無過往大字跳數據。`;
+                document.getElementById('chart-container').style.display = 'none';
+                return;
+            }
+
+            let html = '';
+            let scores = [];
+            data.forEach((row, index) => {
+                const d = new Date(row.created_at);
+                const dateStr = d.toLocaleDateString('zh-HK');
+                const timeStr = d.toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit', hour12: false });
+                
+                html += `<div class="history-item"><span>第 ${data.length - index} 次 (${dateStr} ${timeStr})</span><strong>${row.score_value} 下</strong></div>`;
+                scores.push(row.score_value);
+            });
+            historyBox.innerHTML = html;
+
+            drawTrendChart(scores);
+
+            const latest = scores[0];
+            const maxScore = Math.max(...scores);
+            trendAnalysis.innerHTML = `📈 <b>趨勢分析：</b>最近一次成績 <b>${latest} 下</b>，歷史最高紀錄 <b>${maxScore} 下</b>。繼續保持良好的跳躍爆發力！`;
+
+        } catch (err) {
+            console.error(err);
+            historyBox.innerHTML = `<div style="text-align: center; color: #f44336; padding: 20px;">載入紀錄失敗</div>`;
+        }
+    }
+</script>
+
+</body>
+</html>
