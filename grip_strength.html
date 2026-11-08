@@ -7,7 +7,7 @@
     <!-- MediaPipe Pose -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <!-- Tesseract.js 用於專屬數位燈 OCR -->
+    <!-- Tesseract.js 用於數位 LCD 讀數 OCR -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <!-- Supabase JS 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -39,14 +39,14 @@
 
         .roi-guide-box {
             position: absolute;
-            top: 30%;
-            left: 20%;
-            width: 60%;
-            height: 35%;
+            top: 25%;
+            left: 15%;
+            width: 70%;
+            height: 45%;
             border: 3px dashed #00e676;
             border-radius: 10px;
             pointer-events: none;
-            box-shadow: 0 0 15px rgba(0, 230, 118, 0.5);
+            box-shadow: 0 0 15px rgba(0, 230, 118, 0.4);
             display: flex;
             justify-content: center;
             align-items: flex-start;
@@ -67,8 +67,8 @@
 
         button.btn-primary { width: 100%; padding: 12px; font-size: 1rem; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background-color: #ff9800; margin-top: 5px; }
         button.btn-primary:hover { opacity: 0.9; }
+        button.btn-secondary { width: 100%; padding: 10px; font-size: 0.95rem; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background-color: #00e676; margin-top: 5px; }
 
-        .action-btn-group { display: flex; gap: 10px; margin-top: 5px; }
         .history-container { background: #2a2a2a; border-radius: 10px; padding: 10px; max-height: 380px; overflow-y: auto; }
         table.history-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
         table.history-table th, table.history-table td { border: 1px solid #444; padding: 6px; text-align: center; }
@@ -79,7 +79,7 @@
 
 <div id="main-card">
     <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">kg 右上角嚴格定位・位數數學對齊・0.5kg 結算</div>
+    <div class="subtitle">精準 OCR 數位辨識・0.5kg 結算・完整測驗流程</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
@@ -104,17 +104,17 @@
             <video id="webcam" autoplay muted playsinline></video>
             <canvas id="output-canvas"></canvas>
             
-            <div class="roi-guide-box"><div class="roi-label">請將螢幕置於此綠框內 (支援正反倒拿)</div></div>
+            <div class="roi-guide-box"><div class="roi-label">請將握力計螢幕置於此綠框內</div></div>
             
             <!-- AI 預覽小方格 -->
-            <div class="debug-label">AI kg 定向轉正預覽</div>
+            <div class="debug-label">OCR 辨識預覽</div>
             <canvas id="debug-canvas"></canvas>
         </div>
 
         <div class="hud-panel">
             <div class="hud-card">
                 <div class="hud-title">當前測驗手</div>
-                <div class="hud-value" id="current-hand-label" style="color: #00e676;">右手 (1/3)</div>
+                <div class="hud-value" id="current-hand-label" style="color: #00e676;">右手 (第1次)</div>
             </div>
             <div class="hud-card">
                 <div class="hud-title">即時讀數</div>
@@ -126,7 +126,7 @@
             </div>
         </div>
 
-        <div id="status-bar">⏳ 系統啟動中，請將手握器放入綠框內...</div>
+        <div id="status-bar">⏳ 系統啟動中，準備載入 AI 模型...</div>
         <div id="control-area"></div>
     </div>
 
@@ -134,7 +134,7 @@
     <div id="tab-history" class="tab-content" style="display: none;">
         <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
             <span style="font-size: 0.85rem; color: #aaa; font-weight: bold;">歷史記錄：</span>
-            <button onclick="loadHistory()" style="background: #333; color: #ff9800; border: 1px solid #ff9800; padding: 4px 10px; border-radius: 6px; cursor: pointer;">🔄 整理</button>
+            <button onclick="loadHistory()" style="background: #333; color: #ff9800; border: 1px solid #ff9800; padding: 4px 10px; border-radius: 6px; cursor: pointer;">🔄 重新整理</button>
         </div>
         <div class="history-container">
             <table class="history-table">
@@ -146,23 +146,22 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = 'TEST_USER';
     let pose = null, mediaStream = null, tesseractWorker = null;
     
-    let currentHand = 'right', currentAttempt = 1;
-    let rightAttempts = [], leftAttempts = [];
-    let state = 'WAITING_FOR_TARGET'; 
+    let currentHand = 'right'; // 'right' 或 'left'
+    let currentAttempt = 1;    // 1, 2, 3
+    let rightAttempts = [];
+    let leftAttempts = [];
+    let state = 'IDLE';        // IDLE, WAITING_FOR_TARGET, COUNTING_DOWN, TESTING, FINISHED
     
     let maxGripScore = 0.0;
     let latestOcrValue = 0.0;
     let isOcrProcessing = false;
-    let isBodyDetected = true;
-    let isDeviceDetected = false;
-    let detectedHandSide = 'right';
     let countdownTimer = null, testTimer = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
@@ -177,7 +176,6 @@
         await initTesseractOCR();
         
         ocrLoop();
-        startMainStateMachine();
     });
 
     function switchTab(tabName) {
@@ -222,16 +220,27 @@
 
     async function changeCamera() { await startWebcam(document.getElementById('camera-select').value); }
 
-    async function initTesseractOCR() {
+    async function initTesseractWorker() {
+        if (tesseractWorker) return;
         try {
-            document.getElementById('status-bar').innerText = "⏳ 載入 kg 定向與數學對齊引擎...";
             tesseractWorker = await Tesseract.createWorker('eng');
-            await tesseractWorker.setParameters({ tessedit_char_whitelist: '0123456789kgKG' });
-            document.getElementById('status-bar').innerText = "✅ 系統就緒！請將右手握力計放入綠框內";
-            speak("系統就緒，請用右手進行測驗");
+            await tesseractWorker.setParameters({ 
+                tessedit_char_whitelist: '0123456789.kgKG',
+                tessedit_pageseg_mode: '7' // 視為單行文字，大幅提升數字辨識率
+            });
         } catch (e) {
             console.error("Tesseract 初始化失敗", e);
         }
+    }
+
+    async function initTesseractOCR() {
+        document.getElementById('status-bar').innerText = "⏳ 載入 AI 數值辨識引擎...";
+        await initTesseractWorker();
+        document.getElementById('status-bar').innerText = "✅ 系統就緒！點擊下方按鈕開始測驗";
+        
+        // 初始顯示「開始測驗」按鈕，讓使用者主導
+        showStartButton("🚀 開始右手第 1 次測驗");
+        speak("系統就緒，請準備進行右手測驗");
     }
 
     function initMediaPipePose() {
@@ -246,17 +255,8 @@
             canvasElement.height = videoElement.videoHeight || 480;
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            
             if (results.poseLandmarks) {
-                isBodyDetected = true;
                 drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00e676', lineWidth: 2 });
-                let rWrist = results.poseLandmarks[15];
-                let lWrist = results.poseLandmarks[16];
-                if (rWrist && lWrist) {
-                    detectedHandSide = (rWrist.z < lWrist.z || rWrist.x > lWrist.x) ? 'right' : 'left';
-                }
-            } else {
-                isBodyDetected = true; 
             }
             canvasCtx.restore();
         });
@@ -270,16 +270,17 @@
         requestAnimationFrame(poseLoop);
     }
 
-    // 🎯 核心：嚴格驗證 "kg" 位於右上角 (x > 45%, y < 55%) 並對齊數學位數
+    // 🎯 優化版 OCR：自動截取綠框區域、二值化並智慧解析數字與 kg
     async function scanDeviceLCD(video) {
         if (!video || video.readyState < 2 || !tesseractWorker) return 0;
         const sw = video.videoWidth || 640;
         const sh = video.videoHeight || 480;
         
-        const sx = sw * 0.2;
-        const sy = sh * 0.3;
-        const sWidth = sw * 0.6;
-        const sHeight = sh * 0.35;
+        // 框選 ROI 區域 (與畫面上 .roi-guide-box 相符)
+        const sx = sw * 0.15;
+        const sy = sh * 0.25;
+        const sWidth = sw * 0.7;
+        const sHeight = sh * 0.45;
 
         const rawCanvas = document.createElement('canvas');
         rawCanvas.width = sWidth;
@@ -289,6 +290,8 @@
 
         let bestVal = 0;
         let selectedCanvas = rawCanvas;
+
+        // 測試正常角度與 180 度倒拿角度
         const angles = [0, 180];
 
         for (let angle of angles) {
@@ -311,45 +314,29 @@
             const previewCtx = previewCanvas.getContext('2d');
             previewCtx.drawImage(testCanvas, 0, 0);
 
+            // 影像前處理：提高對比與二值化，幫助 OCR 讀取 LCD 數字
             let imgData = previewCtx.getImageData(0, 0, sWidth, sHeight);
             let data = imgData.data;
             for (let i = 0; i < data.length; i += 4) {
-                let brightness = 0.34 * data[i] + 0.5 * data[i + 1] + 0.16 * data[i + 2];
-                let color = brightness > 95 ? 255 : 0; 
+                let brightness = 0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
+                let color = brightness > 100 ? 255 : 0; 
                 data[i] = data[i+1] = data[i+2] = color;
             }
             previewCtx.putImageData(imgData, 0, 0);
 
             try {
                 const result = await tesseractWorker.recognize(previewCanvas);
-                const words = result.data.words || [];
-                let fullText = result.data.text.toLowerCase();
-                let cleanDigits = result.data.text.replace(/[^0-9]/g, '');
+                let text = result.data.text.trim();
+                let cleanText = text.toLowerCase();
 
-                // 🎯 1. 檢查是否包含 "kg" 單位
-                let hasKg = fullText.includes('kg') || fullText.includes('k') || fullText.includes('g');
-                let isKgInTopRight = false;
+                // 檢查是否包含 kg 或是純數字 (放寬限制，只要有數字就嘗試解析)
+                let hasKg = cleanText.includes('k') || cleanText.includes('g') || cleanText.includes('8') || cleanText.length > 0;
+                let cleanDigits = text.replace(/[^0-9]/g, '');
 
-                // 🎯 2. 嚴格檢查 kg 座標是否落在右上區域
-                for (let w of words) {
-                    let wText = w.text.toLowerCase();
-                    if (wText.includes('k') || wText.includes('g')) {
-                        let centerX = (w.bbox.x0 + w.bbox.x1) / 2;
-                        let centerY = (w.bbox.y0 + w.bbox.y1) / 2;
-                        // kg 必須位於寬度右半邊 (>45%) 且高度上半邊 (<55%)
-                        if (centerX > sWidth * 0.45 && centerY < sHeight * 0.55) {
-                            isKgInTopRight = true;
-                            break;
-                        }
-                    }
-                }
-
-                // 只有當確定 kg 在右上角（或穩定辨識出 kg）且有數字時才進行解析
-                if ((hasKg && isKgInTopRight) && cleanDigits.length >= 2) {
+                if (hasKg && cleanDigits.length >= 2) {
                     let parsedVal = 0;
-
-                    // 💡 位數對應：3位數字為 (十位, 個位, 小數)，2位數字為 (個位, 小數)
-                    if (cleanDigits.length === 3) {
+                    // 位數智慧對應：例如 255 -> 25.5 kg, 45 -> 4.5 kg 等
+                    if (cleanDigits.length >= 3) {
                         let d1 = parseInt(cleanDigits[0]);
                         let d2 = parseInt(cleanDigits[1]);
                         let d3 = parseInt(cleanDigits[2]);
@@ -357,7 +344,7 @@
                     } else if (cleanDigits.length === 2) {
                         let d1 = parseInt(cleanDigits[0]);
                         let d2 = parseInt(cleanDigits[1]);
-                        parsedVal = d1 + (d2 * 0.1); 
+                        parsedVal = d1 + (d2 * 0.1);
                     }
 
                     if (parsedVal >= 0.5 && parsedVal <= 60.0) {
@@ -369,6 +356,7 @@
             } catch (e) {}
         }
 
+        // 更新除錯預覽小方格
         const debugCanvas = document.getElementById('debug-canvas');
         const debugCtx = debugCanvas.getContext('2d');
         debugCanvas.width = sWidth;
@@ -379,38 +367,33 @@
     }
 
     async function ocrLoop() {
-        if (!isOcrProcessing) {
+        if (!isOcrProcessing && (state === 'WAITING_FOR_TARGET' || state === 'TESTING')) {
             const video = document.getElementById('webcam');
             if (video && video.readyState >= 2) {
                 isOcrProcessing = true;
                 let val = await scanDeviceLCD(video);
-                if (val > 0) latestOcrValue = val;
+                if (val > 0) {
+                    latestOcrValue = val;
+                    document.getElementById('current-grip-display').innerText = `${latestOcrValue} kg`;
+                }
                 isOcrProcessing = false;
             }
         }
-        setTimeout(ocrLoop, 300);
+        setTimeout(ocrLoop, 350);
     }
 
-    function startMainStateMachine() {
-        setInterval(() => {
-            if (state === 'WAITING_FOR_TARGET') {
-                isDeviceDetected = (latestOcrValue > 0);
-                let handName = currentHand === 'right' ? '右手' : '左手';
-                document.getElementById('current-hand-label').innerText = `${handName} (${currentAttempt}/3)`;
-
-                if (isDeviceDetected) {
-                    startCountdown();
-                } else {
-                    document.getElementById('status-bar').innerText = `⏳ 請將手握器螢幕對準綠框，尋找 kg 右上角定位... (${handName} 第 ${currentAttempt} 次)`;
-                }
-            }
-        }, 500);
+    // 🕹️ 控制按鈕介面生成
+    function showStartButton(label) {
+        const controlArea = document.getElementById('control-area');
+        controlArea.innerHTML = `<button class="btn-primary" onclick="startCountdown()">${label}</button>`;
     }
 
     function startCountdown() {
         state = 'COUNTING_DOWN';
+        document.getElementById('control-area').innerHTML = '';
         let count = 3;
         let handName = currentHand === 'right' ? '右手' : '左手';
+        
         document.getElementById('status-bar').style.backgroundColor = 'rgba(255, 152, 0, 0.3)';
         document.getElementById('status-bar').innerText = `🔥 ${handName}準備！倒數 ${count} 秒...`;
         speak(`${count}`);
@@ -437,12 +420,11 @@
         document.getElementById('status-bar').style.backgroundColor = 'rgba(0, 230, 118, 0.2)';
         document.getElementById('status-bar').style.borderColor = '#00e676';
         document.getElementById('status-bar').style.color = '#00e676';
-        document.getElementById('status-bar').innerText = "💪 測驗中 (5秒)：請持續用力緊握...";
+        document.getElementById('status-bar').innerText = "💪 測驗中 (5秒)：請持續用力緊握手握器...";
 
         let timeLeft = 5;
         testTimer = setInterval(() => {
             if (latestOcrValue > 0) {
-                document.getElementById('current-grip-display').innerText = `${latestOcrValue} kg`;
                 if (latestOcrValue > maxGripScore) {
                     maxGripScore = latestOcrValue;
                     document.getElementById('max-grip-display').innerText = `${maxGripScore} kg`;
@@ -456,80 +438,70 @@
                 clearInterval(testTimer);
                 
                 if (maxGripScore <= 0) {
-                    document.getElementById('status-bar').innerText = "⚠️ 未穩定讀取到數值，請重新放置！";
+                    document.getElementById('status-bar').innerText = "⚠️ 未穩定讀取到數值，請調整擺放位置後重試！";
                     speak("未讀取到數值，請重試。");
-                    setTimeout(resetToWaiting, 2500);
+                    state = 'WAITING_FOR_TARGET';
+                    showStartButton(`🔄 重新測驗 ${currentHand === 'right' ? '右手' : '左手'} (第 ${currentAttempt} 次)`);
                     return;
                 }
 
+                // 記錄成績
                 if (currentHand === 'right') rightAttempts.push(maxGripScore);
                 else leftAttempts.push(maxGripScore);
 
-                state = 'HAND_CONFIRMING';
                 speak(`成績，${maxGripScore} 公斤。`);
-                showAttemptConfirmUI(maxGripScore);
+                handleAttemptCompletion();
             }
         }, 1000);
     }
 
-    function showAttemptConfirmUI(score) {
+    function handleAttemptCompletion() {
         let handName = currentHand === 'right' ? '右手' : '左手';
-        const statusBar = document.getElementById('status-bar');
-        statusBar.innerHTML = `🎉 【${handName}】第 ${currentAttempt} 次成績：<b>${score} kg</b>。即將自動進行下一階段...`;
-
-        setTimeout(() => {
-            if (currentAttempt < 3) {
-                currentAttempt++;
-                resetToWaiting();
-            } else {
-                if (currentHand === 'right') {
-                    currentHand = 'left';
-                    currentAttempt = 1;
-                    document.getElementById('current-hand-label').innerText = `左手 (1/3)`;
-                    speak("右手測驗完畢，請換左手進行測驗");
-                    resetToWaiting();
-                } else {
-                    showFinalUploadUI();
-                }
-            }
-        }, 3000);
-    }
-
-    function showFinalUploadUI() {
-        state = 'ALL_CONFIRMING';
-        let bestRight = rightAttempts.length > 0 ? Math.max(...rightAttempts) : 0;
-        let bestLeft = leftAttempts.length > 0 ? Math.max(...leftAttempts) : 0;
         
-        document.getElementById('status-bar').innerHTML = `📊 結算：右手 <b>${bestRight} kg</b> | 左手 <b>${bestLeft} kg</b><br>⏳ 正在自動上傳至雲端...`;
-        speak("左右手測驗全部完成，正在上傳成績");
-        confirmUploadAll(bestRight, bestLeft);
-    }
-
-    async function confirmUploadAll(bestRight, bestLeft) {
-        try {
-            await supabaseClient.from('fitness_records').insert([{ student_id: currentUserId, category: 'grip_right', score_value: bestRight, created_at: new Date() }]);
-            await supabaseClient.from('fitness_records').insert([{ student_id: currentUserId, category: 'grip_left', score_value: bestLeft, created_at: new Date() }]);
-            document.getElementById('status-bar').innerText = "✅ 成績已成功上傳至雲端！";
-            speak("成績上傳成功");
-            loadHistory();
-            setTimeout(fullReset, 3000);
-        } catch (err) {
-            document.getElementById('status-bar').innerText = "⚠️ 雲端上傳失敗，請檢查資料表";
-            setTimeout(fullReset, 3000);
+        if (currentAttempt < 3) {
+            currentAttempt++;
+            state = 'WAITING_FOR_TARGET';
+            document.getElementById('status-bar').innerHTML = `🎉 【${handName}】第 ${currentAttempt - 1} 次成績：<b>${maxGripScore} kg</b>。準備好後請點擊下方按鈕進行下一次！`;
+            document.getElementById('current-hand-label').innerText = `${handName} (第${currentAttempt}次)`;
+            showStartButton(`▶️ 開始 ${handName}第 ${currentAttempt} 次測驗`);
+        } else {
+            if (currentHand === 'right') {
+                // 右手 3 次完成，切換到左手，但「必須停下來」等使用者點擊才開始左手
+                currentHand = 'left';
+                currentAttempt = 1;
+                state = 'WAITING_FOR_TARGET';
+                document.getElementById('current-hand-label').innerText = `左手 (第1次)`;
+                document.getElementById('status-bar').innerHTML = `✅ 右手測驗全部完成！請換左手，準備好後點擊按鈕。`;
+                speak("右手測驗完畢，請換左手進行測驗");
+                showStartButton("🦾 開始左手第 1 次測驗");
+            } else {
+                // 左右手全部完成！上傳雲端並停止，等待使用者重新測試
+                showFinalUploadAndStop();
+            }
         }
     }
 
-    function resetToWaiting() {
-        latestOcrValue = 0.0;
-        document.getElementById('current-grip-display').innerText = '0.0 kg';
-        document.getElementById('max-grip-display').innerText = '0.0 kg';
-        document.getElementById('status-bar').style.backgroundColor = 'rgba(255, 152, 0, 0.15)';
-        document.getElementById('status-bar').style.borderColor = '#ff9800';
-        document.getElementById('status-bar').style.color = '#ff9800';
-        let handName = currentHand === 'right' ? '右手' : '左手';
-        document.getElementById('status-bar').innerText = `✅ 就緒！請準備【${handName}】第 ${currentAttempt} 次。`;
-        document.getElementById('control-area').innerHTML = '';
-        state = 'WAITING_FOR_TARGET';
+    async function showFinalUploadAndStop() {
+        state = 'FINISHED';
+        let bestRight = rightAttempts.length > 0 ? Math.max(...rightAttempts) : 0;
+        let bestLeft = leftAttempts.length > 0 ? Math.max(...leftAttempts) : 0;
+        
+        document.getElementById('status-bar').innerHTML = `📊 左右手全部完成！結算：右手 <b>${bestRight} kg</b> | 左手 <b>${bestLeft} kg</b><br>⏳ 正在上傳至雲端...`;
+        speak("左右手測驗全部完成，正在上傳成績");
+        
+        try {
+            await supabaseClient.from('fitness_records').insert([{ student_id: currentUserId, category: 'grip_right', score_value: bestRight, created_at: new Date() }]);
+            await supabaseClient.from('fitness_records').insert([{ student_id: currentUserId, category: 'grip_left', score_value: bestLeft, created_at: new Date() }]);
+            document.getElementById('status-bar').innerHTML = `✅ 成績已成功上傳至雲端！<br>📊 最佳成績：右手 <b>${bestRight} kg</b> | 左手 <b>${bestLeft} kg</b>`;
+            speak("成績上傳成功");
+            loadHistory();
+        } catch (err) {
+            document.getElementById('status-bar').innerText = "⚠️ 雲端上傳失敗，請檢查資料表連線";
+        }
+
+        // 停止並提供重新測驗按鈕
+        const controlArea = document.getElementById('control-area');
+        controlArea.innerHTML = `<button class="btn-secondary" onclick="fullReset()">🔄 重新開始全新測驗</button>`;
     }
 
     function fullReset() { 
@@ -537,8 +509,17 @@
         currentAttempt = 1; 
         rightAttempts = []; 
         leftAttempts = []; 
-        document.getElementById('current-hand-label').innerText = `右手 (1/3)`;
-        resetToWaiting(); 
+        maxGripScore = 0.0;
+        latestOcrValue = 0.0;
+        document.getElementById('current-hand-label').innerText = `右手 (第1次)`;
+        document.getElementById('current-grip-display').innerText = '0.0 kg';
+        document.getElementById('max-grip-display').innerText = '0.0 kg';
+        document.getElementById('status-bar').style.backgroundColor = 'rgba(255, 152, 0, 0.15)';
+        document.getElementById('status-bar').style.borderColor = '#ff9800';
+        document.getElementById('status-bar').style.color = '#ff9800';
+        document.getElementById('status-bar').innerText = `✅ 就緒！請將右手握力計放入綠框內。`;
+        showStartButton("🚀 開始右手第 1 次測驗");
+        state = 'WAITING_FOR_TARGET';
     }
 
     async function loadHistory() {
