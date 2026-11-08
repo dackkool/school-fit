@@ -3,10 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 智能手握力測驗 | Grip Strength Challenge</title>
-    <!-- MediaPipe Pose -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <title>AI 全自動智慧手握力測驗 | Grip Strength Challenge</title>
     <!-- Tesseract.js 用於智慧 OCR 辨識 -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <!-- Supabase JS 庫 -->
@@ -33,35 +30,31 @@
         .camera-select-group select { width: 100%; padding: 6px; font-size: 0.9rem; border-radius: 8px; border: 1.5px solid #4caf50; background: #2a2a2a; color: white; }
 
         .video-wrapper { position: relative; width: 100%; height: 320px; border-radius: 12px; overflow: hidden; border: 2.5px solid #ff9800; background: #000; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
-        video { display: none; }
-        canvas { width: 100%; height: 100%; object-fit: cover; }
+        video { width: 100%; height: 100%; object-fit: cover; }
 
+        /* 螢幕對準框 */
         .roi-guide-box {
             position: absolute;
-            top: 30%;
-            left: 20%;
-            width: 60%;
-            height: 35%;
-            border: 2.5px dashed #00e676;
-            border-radius: 10px;
+            top: 25%;
+            left: 15%;
+            width: 70%;
+            height: 45%;
+            border: 3px dashed #00e676;
+            border-radius: 12px;
             pointer-events: none;
-            box-shadow: 0 0 15px rgba(0, 230, 118, 0.5);
+            box-shadow: 0 0 20px rgba(0, 230, 118, 0.6);
             display: flex;
             justify-content: center;
             align-items: flex-start;
         }
-        .roi-label { background: rgba(0,230,118,0.9); color: black; font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 0 0 6px 6px; }
+        .roi-label { background: rgba(0,230,118,0.9); color: black; font-size: 0.75rem; font-weight: bold; padding: 4px 10px; border-radius: 0 0 8px 8px; }
 
         .hud-panel { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px; }
         .hud-card { background: #2a2a2a; border-radius: 10px; padding: 8px; text-align: center; border: 1px solid #444; }
         .hud-title { font-size: 0.75rem; color: #aaa; }
         .hud-value { font-size: 1.4rem; font-weight: bold; color: #ff9800; margin-top: 2px; }
 
-        #status-bar { background: rgba(255, 152, 0, 0.15); border: 1px solid #ff9800; color: #ff9800; padding: 8px; border-radius: 8px; text-align: center; font-size: 0.85rem; font-weight: bold; margin-bottom: 10px; }
-
-        button.btn-primary { width: 100%; padding: 10px; font-size: 1rem; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background-color: #ff9800; }
-        button.btn-primary:hover { opacity: 0.9; }
-        button.btn-primary:disabled { background-color: #555; color: #888; cursor: not-allowed; }
+        #status-bar { background: rgba(255, 152, 0, 0.15); border: 1px solid #ff9800; color: #ff9800; padding: 10px; border-radius: 8px; text-align: center; font-size: 0.9rem; font-weight: bold; margin-bottom: 10px; }
 
         .history-container { background: #2a2a2a; border-radius: 10px; padding: 10px; max-height: 380px; overflow-y: auto; }
         table.history-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -72,11 +65,11 @@
 <body>
 
 <div id="main-card">
-    <h1>AI 智能手握力測驗</h1>
-    <div class="subtitle">AI 上半身偵測・自動倒轉辨識・OCR 智能讀取・雲端記錄</div>
+    <h1>AI 全自動手握力測驗</h1>
+    <div class="subtitle">完全全自動・自動正反向辨識・OCR 智能讀取・雲端記錄</div>
 
     <div class="tab-header">
-        <button class="tab-btn active" onclick="switchTab('challenge')">🦾 握力測驗</button>
+        <button class="tab-btn active" onclick="switchTab('challenge')">🦾 全自動握力測驗</button>
         <button class="tab-btn" onclick="switchTab('history')">📋 歷史成績</button>
     </div>
 
@@ -96,10 +89,9 @@
 
         <div class="video-wrapper">
             <video id="webcam" autoplay muted playsinline></video>
-            <canvas id="output-canvas"></canvas>
             <!-- 螢幕對準框 -->
             <div class="roi-guide-box">
-                <div class="roi-label">請將握力計螢幕置於框內 (支援正反向)</div>
+                <div class="roi-label">請將握力計螢幕置於此綠框內 (全自動偵測)</div>
             </div>
         </div>
 
@@ -114,9 +106,7 @@
             </div>
         </div>
 
-        <div id="status-bar">正在初始化系統與 AI 模型...</div>
-
-        <button class="btn-primary" id="start-btn" onclick="startGripTest()" disabled>▶️ 開始 5 秒強力緊握測驗</button>
+        <div id="status-bar">⏳ 正在初始化 AI 光學辨識引擎...</div>
     </div>
 
     <!-- TAB 2: 歷史記錄 -->
@@ -144,19 +134,17 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = null;
     let currentUserName = '';
-    let pose = null;
     let mediaStream = null;
     let isTesting = false;
     let maxGripScore = 0.0;
     let tesseractWorker = null;
-    let ocrInterval = null;
-    let isRunningPrediction = false;
+    let autoDetectInterval = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -177,7 +165,6 @@
 
         await initCameraDevices();
         await startWebcam();
-        await initMediaPipePose();
         await initTesseractOCR();
         loadHistory();
     });
@@ -244,14 +231,8 @@
         try {
             mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
             videoElement.srcObject = mediaStream;
-            
-            await new Promise((resolve, reject) => {
-                videoElement.onloadedmetadata = () => {
-                    videoElement.play().then(resolve).catch(reject);
-                };
-                setTimeout(resolve, 1500);
-            });
-            console.log("相機串流啟動成功");
+            await videoElement.play();
+            console.log("相機串流順暢執行中");
         } catch (err) {
             console.error("相機啟動失敗:", err);
             document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限，請檢查瀏覽器設定！";
@@ -270,95 +251,42 @@
             await tesseractWorker.setParameters({
                 tessedit_char_whitelist: '0123456789.',
             });
-            document.getElementById('status-bar').innerText = "✅ 系統就緒！請將上半身入鏡，並將握力計螢幕置於綠色框內。";
-            document.getElementById('start-btn').disabled = false;
+            document.getElementById('status-bar').innerText = "✅ 全自動就緒！請將握力計螢幕置於綠色框內，系統會自動偵測數值並測驗。";
+            
+            // 啟動全自動背景偵測迴圈 (每 700ms 掃描一次畫面)
+            autoDetectInterval = setInterval(autoDetectAndRunTest, 700);
         } catch (e) {
             console.error("Tesseract 初始化失敗", e);
-            document.getElementById('status-bar').innerText = "⚠️ OCR 載入失敗，但仍可進行測試。";
-            document.getElementById('start-btn').disabled = false;
+            document.getElementById('status-bar').innerText = "⚠️ OCR 載入失敗。";
         }
     }
 
-    async function initMediaPipePose() {
-        const videoElement = document.getElementById('webcam');
-        const canvasElement = document.getElementById('output-canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-
-        pose = new Pose({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-        });
-
-        pose.setOptions({
-            modelComplexity: 1,
-            smoothLandmarks: true,
-            enableSegmentation: false,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-
-        pose.onResults((results) => {
-            if (!canvasElement || !canvasCtx) return;
-            canvasElement.width = videoElement.videoWidth || 640;
-            canvasElement.height = videoElement.videoHeight || 480;
-
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-            if (results.poseLandmarks) {
-                drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00e676', lineWidth: 2 });
-                drawLandmarks(canvasCtx, results.poseLandmarks, { color: '#ff9800', lineWidth: 1 });
-            }
-            canvasCtx.restore();
-        });
-
-        if (!isRunningPrediction) {
-            isRunningPrediction = true;
-            predictWebcam();
-        }
-    }
-
-    async function predictWebcam() {
-        const videoElement = document.getElementById('webcam');
-        if (videoElement && videoElement.readyState >= 2 && !videoElement.paused && !videoElement.ended) {
-            try {
-                await pose.send({ image: videoElement });
-            } catch (e) {
-                console.error("Pose frame error:", e);
-            }
-        }
-        requestAnimationFrame(predictWebcam);
-    }
-
-    async function captureAndReadLCD() {
-        if (!tesseractWorker) return;
-        const video = document.getElementById('webcam');
-        if (!video || video.paused || video.ended || video.readyState < 2) return;
-
+    // 智能 OCR 辨識核心 (支援 0度 與 180度自動反轉)
+    async function recognizeLCDNumber(video) {
+        if (!tesseractWorker) return 0;
         const sw = video.videoWidth || 640;
         const sh = video.videoHeight || 480;
         
-        const sx = sw * 0.2;
-        const sy = sh * 0.3;
-        const sWidth = sw * 0.6;
-        const sHeight = sh * 0.35;
+        // 抓取綠色對準框範圍
+        const sx = sw * 0.15;
+        const sy = sh * 0.25;
+        const sWidth = sw * 0.7;
+        const sHeight = sh * 0.45;
 
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = sWidth;
         tempCanvas.height = sHeight;
         const ctx = tempCanvas.getContext('2d');
-
         ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
         try {
             const values = [];
-
-            // 1. 正常方向 0度
+            // 1. 正向 0 度
             const { data: { text: text0 } } = await tesseractWorker.recognize(tempCanvas);
             let val0 = parseFloat(text0.replace(/[^0-9.]/g, ''));
             if (!isNaN(val0) && val0 > 0 && val0 < 150) values.push(val0);
 
-            // 2. 倒轉方向 180度
+            // 2. 倒轉 180 度 (支援握力計倒拿)
             const rotatedCanvas = document.createElement('canvas');
             rotatedCanvas.width = sWidth;
             rotatedCanvas.height = sHeight;
@@ -371,32 +299,51 @@
             let val180 = parseFloat(text180.replace(/[^0-9.]/g, ''));
             if (!isNaN(val180) && val180 > 0 && val180 < 150) values.push(val180);
 
-            if (values.length > 0) {
-                let bestVal = Math.max(...values);
-                document.getElementById('current-grip-display').innerText = `${bestVal} kg`;
-                if (bestVal > maxGripScore) {
-                    maxGripScore = bestVal;
-                    document.getElementById('max-grip-display').innerText = `${maxGripScore} kg`;
-                }
-            }
+            return values.length > 0 ? Math.max(...values) : 0;
         } catch (err) {
-            console.error("OCR 辨識錯誤", err);
+            return 0;
         }
     }
 
-    function startGripTest() {
-        if (!currentUserId) return;
+    // 全自動偵測：當畫面中偵測到大於 0.5kg 的數值時，自動啟動 5 秒計時測驗！
+    async function autoDetectAndRunTest() {
+        if (isTesting || !tesseractWorker) return;
+        const video = document.getElementById('webcam');
+        if (!video || video.paused || video.ended || video.readyState < 2) return;
 
+        let detectedVal = await recognizeLCDNumber(video);
+        if (detectedVal > 0.5) {
+            // 觸發全自動測驗！
+            triggerAutomaticGripTest(detectedVal);
+        }
+    }
+
+    function triggerAutomaticGripTest(initialVal) {
         isTesting = true;
-        maxGripScore = 0.0;
-        document.getElementById('max-grip-display').innerText = '0.0 kg';
-        document.getElementById('start-btn').disabled = true;
+        maxGripScore = initialVal;
+        document.getElementById('current-grip-display').innerText = `${initialVal} kg`;
+        document.getElementById('max-grip-display').innerText = `${maxGripScore} kg`;
 
-        speak("請全力握緊握力計！測驗開始！");
-        document.getElementById('status-bar').innerText = "💪 測驗中：請持續用力緊握，系統正在自動辨識正反向數字...";
+        speak("偵測到握力，自動測驗開始！");
+        document.getElementById('status-bar').style.backgroundColor = 'rgba(0, 230, 118, 0.2)';
+        document.getElementById('status-bar').style.borderColor = '#00e676';
+        document.getElementById('status-bar').style.color = '#00e676';
 
         let timeLeft = 5;
-        let testTimer = setInterval(() => {
+        let testTimer = setInterval(async () => {
+            // 在 5 秒測驗期間持續抓取畫面中的最大峰值
+            const video = document.getElementById('webcam');
+            if (video && video.readyState >= 2) {
+                let currentVal = await recognizeLCDNumber(video);
+                if (currentVal > 0) {
+                    document.getElementById('current-grip-display').innerText = `${currentVal} kg`;
+                    if (currentVal > maxGripScore) {
+                        maxGripScore = currentVal;
+                        document.getElementById('max-grip-display').innerText = `${maxGripScore} kg`;
+                    }
+                }
+            }
+
             timeLeft--;
             if (timeLeft > 0) {
                 speak(`${timeLeft}`);
@@ -404,25 +351,27 @@
 
             if (timeLeft <= 0) {
                 clearInterval(testTimer);
-                clearInterval(ocrInterval);
-                isTesting = false;
                 
-                document.getElementById('start-btn').disabled = false;
-                document.getElementById('status-bar').innerText = `🎉 測驗結束！本輪最佳握力為 ${maxGripScore} kg。已自動上傳雲端！`;
-                speak(`時間到！測驗完成，最佳成績 ${maxGripScore} 公斤。`);
+                document.getElementById('status-bar').innerText = `🎉 測驗完成！本輪最佳握力：${maxGripScore} kg，已自動上傳雲端！`;
+                speak(`測驗完成，最佳成績 ${maxGripScore} 公斤。`);
                 
-                uploadResult(currentUserId, maxGripScore);
+                await uploadResult(currentUserId, maxGripScore);
+
+                // 休息 3 秒後恢復全自動待命狀態
+                setTimeout(() => {
+                    isTesting = false;
+                    maxGripScore = 0.0;
+                    document.getElementById('current-grip-display').innerText = '0.0 kg';
+                    document.getElementById('max-grip-display').innerText = '0.0 kg';
+                    document.getElementById('status-bar').style.backgroundColor = 'rgba(255, 152, 0, 0.15)';
+                    document.getElementById('status-bar').style.borderColor = '#ff9800';
+                    document.getElementById('status-bar').style.color = '#ff9800';
+                    document.getElementById('status-bar').innerText = "✅ 準備就緒！請將握力計螢幕置於綠色框內，隨時可進行下一次測驗。";
+                }, 3000);
             }
         }, 1000);
-
-        ocrInterval = setInterval(() => {
-            if (isTesting) {
-                captureAndReadLCD();
-            }
-        }, 500);
     }
 
-    // 🔄 對接共用 `fitness_records` 表格
     async function uploadResult(studentId, score) {
         try {
             const { error } = await supabaseClient.from('fitness_records').insert([
@@ -442,7 +391,6 @@
         }
     }
 
-    // 📋 從共用 `fitness_records` 撈取 category 為 'grip_strength' 的個人歷史記錄
     async function loadHistory() {
         const tbody = document.getElementById('history-tbody');
         tbody.innerHTML = `<tr><td colspan="4" style="color: #ff9800; padding: 15px;">載入記錄中...</td></tr>`;
@@ -477,7 +425,7 @@
             });
         } catch (err) {
             console.error("載入歷史記錄失敗:", err);
-            tbody.innerHTML = `<tr><td colspan="4" style="color: #f44336; padding: 15px;">載入出錯：請確認 Supabase 已建立 <b>fitness_records</b> 表 (含 student_id, category, score_value, created_at)。</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="4" style="color: #f44336; padding: 15px;">載入出錯：請確認 Supabase 已建立 <b>fitness_records</b> 表。</td></tr>`;
         }
     }
 
