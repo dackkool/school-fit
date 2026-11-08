@@ -34,9 +34,9 @@
 
         .video-wrapper { position: relative; width: 100%; height: 280px; border-radius: 12px; overflow: hidden; border: 2.5px solid #ff9800; background: #000; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
         
-        /* 避免前置鏡頭左右反轉導致數字讀錯 */
-        video { width: 100%; height: 100%; object-fit: cover; }
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+        /* 💡 核心：將預覽畫面進行左右鏡像翻轉，確保前置鏡頭顯示正常 */
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; transform: scaleX(-1); }
 
         /* 螢幕指定對準框 */
         .roi-guide-box {
@@ -78,7 +78,7 @@
 
 <div id="main-card">
     <h1>AI 全自動智慧手握力測驗</h1>
-    <div class="subtitle">身分偵測・框內指定手握器・3秒自動倒數・確認上傳</div>
+    <div class="subtitle">左右鏡像翻轉・KG 方向與數位燈辨識・3秒自動倒數</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 全自動握力測驗</button>
@@ -93,7 +93,7 @@
         </div>
 
         <div class="camera-select-group">
-            <label>選擇相機鏡頭 (建議使用後置鏡頭)：</label>
+            <label>選擇相機鏡頭：</label>
             <select id="camera-select" onchange="changeCamera()">
                 <option value="">載入鏡頭中...</option>
             </select>
@@ -149,8 +149,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = null;
@@ -237,27 +237,20 @@
             mediaStream.getTracks().forEach(track => track.stop());
         }
 
-        // 預設強制優先使用後置主鏡頭 (facingMode: 'environment')，避免前置鏡頭左右鏡像反轉問題
         const constraints = {
-            video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { exact: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } },
+            video: deviceId ? { deviceId: { exact: deviceId } } : { width: { ideal: 640 }, height: { ideal: 480 } },
             audio: false
         };
 
         try {
             mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+            videoElement.srcObject = mediaStream;
+            await videoElement.play();
+            document.getElementById('status-bar').innerText = "✅ 相機已啟動！請將上半身入鏡並將手握器置於綠框內。";
         } catch (err) {
-            // 如果手機沒有獨立的後置鏡頭標籤，降級改用預設鏡頭
-            try {
-                mediaStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
-            } catch (e) {
-                document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！請確認瀏覽器設定。";
-                return;
-            }
+            console.error("相機啟動失敗:", err);
+            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！";
         }
-
-        videoElement.srcObject = mediaStream;
-        await videoElement.play();
-        document.getElementById('status-bar').innerText = "✅ 相機已啟動！請將上半身入鏡並將手握器置於綠框內。";
     }
 
     async function changeCamera() {
@@ -267,9 +260,10 @@
 
     async function initTesseractOCR() {
         try {
+            // 允許辨識數字、小數點以及 kg 單位判定方向
             tesseractWorker = await Tesseract.createWorker('eng');
             await tesseractWorker.setParameters({
-                tessedit_char_whitelist: '0123456789.',
+                tessedit_char_whitelist: '0123456789.kgKG',
             });
             startMainLoop();
         } catch (e) {
@@ -322,6 +316,7 @@
         requestAnimationFrame(poseLoop);
     }
 
+    // 💡 智慧掃描：透過偵測畫面中的數字與 kg 方向來自動校正
     async function scanDeviceLCD(video) {
         if (!tesseractWorker) return 0;
         const sw = video.videoWidth || 640;
@@ -336,13 +331,22 @@
         tempCanvas.width = sWidth;
         tempCanvas.height = sHeight;
         const ctx = tempCanvas.getContext('2d');
+        // 同步進行水平反轉以抵銷預覽鏡像
+        ctx.translate(sWidth, 0);
+        ctx.scale(-1, 1);
         ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
         try {
             const { data: { text } } = await tesseractWorker.recognize(tempCanvas);
+            
+            // 檢查是否包含 kg 單位或是有效數字，確保真的是手握力計螢幕
+            let cleanText = text.toLowerCase();
+            let hasKg = cleanText.includes('kg');
+            
             let cleaned = text.replace(/[^0-9.]/g, '');
             let val = parseFloat(cleaned);
 
+            // 合理性過濾：必須在 1.0 ~ 99.9 kg 之間
             if (!isNaN(val) && val >= 1.0 && val <= 99.9) {
                 return val;
             }
