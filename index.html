@@ -264,12 +264,22 @@
                     <div class="arrow-icon">➔</div>
                 </div>
 
-                <!-- 🌟 項目 4: 一分鐘大字跳 (新增選項) -->
+                <!-- 項目 4: 一分鐘大字跳 -->
                 <div class="exercise-card" onclick="navigateToExercise('jump.html')">
                     <div class="exercise-icon">⭐</div>
                     <div class="exercise-info">
                         <div class="exercise-title">一分鐘大字跳</div>
                         <div class="exercise-desc">AI 姿態辨識雙手雙腳開合跳 (自動計數)</div>
+                    </div>
+                    <div class="arrow-icon">➔</div>
+                </div>
+
+                <!-- 🦾 項目 5: 手握力測驗 (新增選項) -->
+                <div class="exercise-card" onclick="navigateToExercise('grip_strength.html')">
+                    <div class="exercise-icon">🦾</div>
+                    <div class="exercise-info">
+                        <div class="exercise-title">AI 手握力測驗</div>
+                        <div class="exercise-desc">MediaPipe 姿態與 LCD 智能光學字體辨識 (OCR)</div>
                     </div>
                     <div class="arrow-icon">➔</div>
                 </div>
@@ -305,8 +315,8 @@
 
 <script>
     // --- 1. 請填入你自己的 Supabase 資料 ---
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const msgBox = document.getElementById('msg-box');
@@ -565,14 +575,14 @@
         switchAuthTab('login');
     }
 
-    // 在「新分頁」中開啟測驗頁面
+    // 在「新分頁」中開啟測驗頁面 (統一使用 user_id 傳參，相容 situp.html 與 grip_strength.html)
     function navigateToExercise(pageUrl) {
         const studentId = sessionStorage.getItem('current_student_id');
         if (!studentId) {
             alert('請先登入！');
             return;
         }
-        window.open(`${pageUrl}?student_id=${encodeURIComponent(studentId)}`, '_blank');
+        window.open(`${pageUrl}?user_id=${encodeURIComponent(studentId)}`, '_blank');
     }
 </script>
 
