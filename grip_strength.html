@@ -79,7 +79,7 @@
 
 <div id="main-card">
     <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">kg 定向・位數數學對齊・0.5kg 結算・雲端記錄</div>
+    <div class="subtitle">自動左右手檢測・kg 定向・0.5kg 結算・雲端記錄</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
@@ -126,7 +126,7 @@
             </div>
         </div>
 
-        <div id="status-bar">⏳ 系統啟動中，請將手握器放入綠框內...</div>
+        <div id="status-bar">⏳ 系統啟動中，請準備進行【右手】測驗...</div>
         <div id="control-area"></div>
     </div>
 
@@ -146,14 +146,14 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = 'TEST_USER';
     let pose = null, mediaStream = null, tesseractWorker = null;
     
-    let currentHand = 'right', currentAttempt = 1;
+    let currentHand = 'right', currentAttempt = 1; // 'right' 或 'left'
     let rightAttempts = [], leftAttempts = [];
     let state = 'WAITING_FOR_TARGET'; 
     
@@ -162,6 +162,7 @@
     let isOcrProcessing = false;
     let isBodyDetected = false;
     let isDeviceDetected = false;
+    let detectedHandSide = null; // 'right' 或 'left' (用 MediaPipe 判斷)
     let countdownTimer = null, testTimer = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
@@ -169,6 +170,7 @@
         if (urlParams.get('user_id')) currentUserId = urlParams.get('user_id');
         document.getElementById('current-user-label').innerText = currentUserId;
 
+        // 強制確保相機與選單在載入時自動啟動
         await startWebcam();
         await initCameraDevices();
         
@@ -223,34 +225,49 @@
 
     async function initTesseractOCR() {
         try {
-            document.getElementById('status-bar').innerText = "⏳ 正在載入 kg 定向與位數數學解析引擎...";
+            document.getElementById('status-bar').innerText = "⏳ 正在載入 AI 引擎...";
             tesseractWorker = await Tesseract.createWorker('eng');
             await tesseractWorker.setParameters({ tessedit_char_whitelist: '0123456789kgKG' });
-            document.getElementById('status-bar').innerText = "✅ AI 引擎就緒，請將手握器螢幕對準綠框";
+            document.getElementById('status-bar').innerText = "✅ 系統就緒！請將右手握力計放入綠框內";
+            speak("系統就緒，請用右手進行測驗");
         } catch (e) {
             console.error("Tesseract 初始化失敗", e);
         }
     }
 
+    // 🎯 核心：利用 MediaPipe 骨架辨識當前是使用左手還是右手拿握力計
     function initMediaPipePose() {
         const videoElement = document.getElementById('webcam');
         const canvasElement = document.getElementById('output-canvas');
         const canvasCtx = canvasElement.getContext('2d');
         pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
         pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        
         pose.onResults((results) => {
             canvasElement.width = videoElement.videoWidth || 640;
             canvasElement.height = videoElement.videoHeight || 480;
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
             if (results.poseLandmarks) {
                 isBodyDetected = true;
                 drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00e676', lineWidth: 2 });
+
+                // 取得手腕與肩膀座標判定左右手 (landmark 15: 右手腕, 16: 左手腕)
+                let rWrist = results.poseLandmarks[15];
+                let lWrist = results.poseLandmarks[16];
+                
+                // 簡單根據畫面左右相對位置判定當前施力拿握力計的手
+                if (rWrist && lWrist) {
+                    // 畫面中若右手腕較活躍或靠近中心，判斷為右手；反之左手
+                    detectedHandSide = (rWrist.z < lWrist.z || rWrist.x > lWrist.x) ? 'right' : 'left';
+                }
             } else {
                 isBodyDetected = false;
             }
             canvasCtx.restore();
         });
+
         async function poseLoop() {
             if (videoElement.readyState >= 2 && !videoElement.paused) {
                 try { await pose.send({ image: videoElement }); } catch (e) {}
@@ -260,7 +277,7 @@
         requestAnimationFrame(poseLoop);
     }
 
-    // 🎯 核心：依據 kg 嚴格定向 + 數位燈位數數學規則對應 + 0.5kg 結算
+    // 🎯 核心 OCR 與 kg 定向邏輯
     async function scanDeviceLCD(video) {
         if (!video || video.readyState < 2) return 0;
         const sw = video.videoWidth || 640;
@@ -277,4 +294,277 @@
         const rawCtx = rawCanvas.getContext('2d');
         rawCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
-        // 測試 0度 與 180度 (支援
+        let bestVal = 0;
+        let selectedCanvas = rawCanvas;
+        const angles = [0, 180];
+
+        for (let angle of angles) {
+            const testCanvas = document.createElement('canvas');
+            testCanvas.width = sWidth;
+            testCanvas.height = sHeight;
+            const testCtx = testCanvas.getContext('2d');
+
+            testCtx.save();
+            if (angle === 180) {
+                testCtx.translate(sWidth, sHeight);
+                testCtx.rotate(Math.PI);
+            }
+            testCtx.drawImage(rawCanvas, 0, 0);
+            testCtx.restore();
+
+            const previewCanvas = document.createElement('canvas');
+            previewCanvas.width = sWidth;
+            previewCanvas.height = sHeight;
+            const previewCtx = previewCanvas.getContext('2d');
+            previewCtx.drawImage(testCanvas, 0, 0);
+
+            let imgData = previewCtx.getImageData(0, 0, sWidth, sHeight);
+            let data = imgData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                let brightness = 0.34 * data[i] + 0.5 * data[i + 1] + 0.16 * data[i + 2];
+                let color = brightness > 100 ? 255 : 0; 
+                data[i] = data[i+1] = data[i+2] = color;
+            }
+            previewCtx.putImageData(imgData, 0, 0);
+
+            if (tesseractWorker) {
+                try {
+                    const { data: { text } } = await tesseractWorker.recognize(previewCanvas);
+                    let lowerText = text.toLowerCase();
+                    let cleanDigits = text.replace(/[^0-9]/g, '');
+
+                    if (lowerText.includes('kg') && cleanDigits.length >= 2) {
+                        let parsedVal = 0;
+                        if (cleanDigits.length === 3) {
+                            let d1 = parseInt(cleanDigits[0]);
+                            let d2 = parseInt(cleanDigits[1]);
+                            let d3 = parseInt(cleanDigits[2]);
+                            parsedVal = (d1 * 10) + d2 + (d3 * 0.1);
+                        } else if (cleanDigits.length === 2) {
+                            let d1 = parseInt(cleanDigits[0]);
+                            let d2 = parseInt(cleanDigits[1]);
+                            parsedVal = d1 + (d2 * 0.1); 
+                        }
+
+                        if (parsedVal >= 0.5 && parsedVal <= 60.0) {
+                            bestVal = Math.round(parsedVal * 2) / 2; // 0.5 kg 結算
+                            selectedCanvas = previewCanvas;
+                            break;
+                        }
+                    }
+                } catch (e) {}
+            }
+        }
+
+        const debugCanvas = document.getElementById('debug-canvas');
+        const debugCtx = debugCanvas.getContext('2d');
+        debugCanvas.width = sWidth;
+        debugCanvas.height = sHeight;
+        debugCtx.drawImage(selectedCanvas, 0, 0);
+
+        return bestVal;
+    }
+
+    async function ocrLoop() {
+        if (!isOcrProcessing) {
+            const video = document.getElementById('webcam');
+            if (video && video.readyState >= 2) {
+                isOcrProcessing = true;
+                let val = await scanDeviceLCD(video);
+                if (val > 0) latestOcrValue = val;
+                isOcrProcessing = false;
+            }
+        }
+        setTimeout(ocrLoop, 300);
+    }
+
+    // 💡 智慧狀態機：自動檢測並比對左右手，達成「全程自動測驗」
+    function startMainStateMachine() {
+        setInterval(() => {
+            if (state === 'WAITING_FOR_TARGET') {
+                isDeviceDetected = (latestOcrValue > 0);
+                let handName = currentHand === 'right' ? '右手' : '左手';
+                document.getElementById('current-hand-label').innerText = `${handName} (${currentAttempt}/3)`;
+
+                if (isBodyDetected && isDeviceDetected) {
+                    // 💡 防呆檢查：檢查學生拿的是不是正確的手
+                    if (detectedHandSide && detectedHandSide !== currentHand) {
+                        let wrongName = detectedHandSide === 'right' ? '右手' : '左手';
+                        let correctName = currentHand === 'right' ? '右手' : '左手';
+                        document.getElementById('status-bar').innerText = `⚠️ 偵測到您使用【${wrongName}】，請改用【${correctName}】拿握力計！`;
+                        speak(`請換${correctName}拿握力計`);
+                        return;
+                    }
+
+                    startCountdown();
+                } else {
+                    let msg = `⏳ 請準備 (${handName} 第 ${currentAttempt} 次)`;
+                    if (!isBodyDetected) msg += " [未偵測上半身]";
+                    if (!isDeviceDetected) msg += " [請將螢幕置於綠框內]";
+                    document.getElementById('status-bar').innerText = msg;
+                }
+            }
+        }, 800);
+    }
+
+    function startCountdown() {
+        state = 'COUNTING_DOWN';
+        let count = 3;
+        let handName = currentHand === 'right' ? '右手' : '左手';
+        document.getElementById('status-bar').style.backgroundColor = 'rgba(255, 152, 0, 0.3)';
+        document.getElementById('status-bar').innerText = `🔥 ${handName}準備！倒數 ${count} 秒...`;
+        speak(`${count}`);
+
+        countdownTimer = setInterval(() => {
+            count--;
+            if (count > 0) {
+                document.getElementById('status-bar').innerText = `🔥 ${handName}準備！倒數 ${count} 秒...`;
+                speak(`${count}`);
+            } else {
+                clearInterval(countdownTimer);
+                beginGripMeasurement();
+            }
+        }, 1000);
+    }
+
+    function beginGripMeasurement() {
+        state = 'TESTING';
+        maxGripScore = 0.0;
+        latestOcrValue = 0.0;
+        document.getElementById('max-grip-display').innerText = '0.0 kg';
+        
+        speak("請全力握緊！");
+        document.getElementById('status-bar').style.backgroundColor = 'rgba(0, 230, 118, 0.2)';
+        document.getElementById('status-bar').style.borderColor = '#00e676';
+        document.getElementById('status-bar').style.color = '#00e676';
+        document.getElementById('status-bar').innerText = "💪 測驗中 (5秒)：請持續用力緊握...";
+
+        let timeLeft = 5;
+        testTimer = setInterval(() => {
+            if (latestOcrValue > 0) {
+                document.getElementById('current-grip-display').innerText = `${latestOcrValue} kg`;
+                if (latestOcrValue > maxGripScore) {
+                    maxGripScore = latestOcrValue;
+                    document.getElementById('max-grip-display').innerText = `${maxGripScore} kg`;
+                }
+            }
+
+            timeLeft--;
+            if (timeLeft > 0) speak(`${timeLeft}`);
+
+            if (timeLeft <= 0) {
+                clearInterval(testTimer);
+                
+                if (maxGripScore <= 0) {
+                    document.getElementById('status-bar').innerText = "⚠️ 未穩定讀取到數值，請重新放置！";
+                    speak("未讀取到數值，請重試。");
+                    setTimeout(resetToWaiting, 2500);
+                    return;
+                }
+
+                if (currentHand === 'right') rightAttempts.push(maxGripScore);
+                else leftAttempts.push(maxGripScore);
+
+                state = 'HAND_CONFIRMING';
+                speak(`成績，${maxGripScore} 公斤。`);
+                showAttemptConfirmUI(maxGripScore);
+            }
+        }, 1000);
+    }
+
+    // 💡 全自動化流程：不需手動按鈕，達成自動進行下一次或自動切換左手
+    function showAttemptConfirmUI(score) {
+        let handName = currentHand === 'right' ? '右手' : '左手';
+        const statusBar = document.getElementById('status-bar');
+        statusBar.innerHTML = `🎉 【${handName}】第 ${currentAttempt} 次成績：<b>${score} kg</b>。即將自動進行下一階段...`;
+
+        setTimeout(() => {
+            if (currentAttempt < 3) {
+                currentAttempt++;
+                resetToWaiting();
+            } else {
+                // 三次完成後自動切換至左手或結算
+                if (currentHand === 'right') {
+                    currentHand = 'left';
+                    currentAttempt = 1;
+                    document.getElementById('current-hand-label').innerText = `左手 (1/3)`;
+                    speak("右手測驗完畢，請換左手進行測驗");
+                    resetToWaiting();
+                } else {
+                    showFinalUploadUI();
+                }
+            }
+        }, 3000); // 停留 3 秒讓學生看見成績後自動推進
+    }
+
+    function showFinalUploadUI() {
+        state = 'ALL_CONFIRMING';
+        let bestRight = rightAttempts.length > 0 ? Math.max(...rightAttempts) : 0;
+        let bestLeft = leftAttempts.length > 0 ? Math.max(...leftAttempts) : 0;
+        
+        document.getElementById('status-bar').innerHTML = `📊 結算：右手 <b>${bestRight} kg</b> | 左手 <b>${bestLeft} kg</b><br>⏳ 正在自動上傳至雲端...`;
+        speak("左右手測驗全部完成，正在上傳成績");
+        
+        // 自動上傳
+        confirmUploadAll(bestRight, bestLeft);
+    }
+
+    async function confirmUploadAll(bestRight, bestLeft) {
+        try {
+            await supabaseClient.from('fitness_records').insert([{ student_id: currentUserId, category: 'grip_right', score_value: bestRight, created_at: new Date() }]);
+            await supabaseClient.from('fitness_records').insert([{ student_id: currentUserId, category: 'grip_left', score_value: bestLeft, created_at: new Date() }]);
+            document.getElementById('status-bar').innerText = "✅ 成績已成功上傳至雲端！";
+            speak("成績上傳成功");
+            loadHistory();
+            setTimeout(fullReset, 3000);
+        } catch (err) {
+            document.getElementById('status-bar').innerText = "⚠️ 雲端上傳失敗，請檢查資料表";
+            setTimeout(fullReset, 3000);
+        }
+    }
+
+    function resetToWaiting() {
+        latestOcrValue = 0.0;
+        document.getElementById('current-grip-display').innerText = '0.0 kg';
+        document.getElementById('max-grip-display').innerText = '0.0 kg';
+        document.getElementById('status-bar').style.backgroundColor = 'rgba(255, 152, 0, 0.15)';
+        document.getElementById('status-bar').style.borderColor = '#ff9800';
+        document.getElementById('status-bar').style.color = '#ff9800';
+        let handName = currentHand === 'right' ? '右手' : '左手';
+        document.getElementById('status-bar').innerText = `✅ 就緒！請準備【${handName}】第 ${currentAttempt} 次。`;
+        document.getElementById('control-area').innerHTML = '';
+        state = 'WAITING_FOR_TARGET';
+    }
+
+    function fullReset() { 
+        currentHand = 'right'; 
+        currentAttempt = 1; 
+        rightAttempts = []; 
+        leftAttempts = []; 
+        document.getElementById('current-hand-label').innerText = `右手 (1/3)`;
+        resetToWaiting(); 
+    }
+
+    async function loadHistory() {
+        const tbody = document.getElementById('history-tbody');
+        try {
+            const { data, error } = await supabaseClient.from('fitness_records').select('*').eq('student_id', currentUserId).in('category', ['grip_right', 'grip_left']).order('created_at', { ascending: false }).limit(10);
+            tbody.innerHTML = '';
+            if (!data || data.length === 0) { tbody.innerHTML = `<tr><td colspan="3">尚無記錄</td></tr>`; return; }
+            data.forEach(row => {
+                let handType = row.category === 'grip_right' ? '🔴 右手' : '🔵 左手';
+                tbody.innerHTML += `<tr><td>${new Date(row.created_at).toLocaleString('zh-HK', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td><td>${handType}</td><td><b style="color: #ff9800;">${row.score_value} kg</b></td></tr>`;
+            });
+        } catch (err) { tbody.innerHTML = `<tr><td colspan="3" style="color: red;">載入失敗</td></tr>`; }
+    }
+
+    const synth = window.speechSynthesis;
+    const speak = (text) => { 
+        const utter = new SpeechSynthesisUtterance(text); 
+        utter.lang = 'zh-HK'; 
+        synth.cancel(); 
+        synth.speak(utter); 
+    };
+</script>
+</body>
+</html>
