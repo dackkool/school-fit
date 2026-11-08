@@ -79,7 +79,7 @@
 
 <div id="main-card">
     <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">自動左右手檢測・kg 定向・0.5kg 結算・雲端記錄</div>
+    <div class="subtitle">自動左右手檢測・極速穩定讀數・0.5kg 結算</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
@@ -104,10 +104,10 @@
             <video id="webcam" autoplay muted playsinline></video>
             <canvas id="output-canvas"></canvas>
             
-            <div class="roi-guide-box"><div class="roi-label">請將螢幕置於此框內 (支援正反倒拿)</div></div>
+            <div class="roi-guide-box"><div class="roi-label">請將螢幕置於此綠框內</div></div>
             
             <!-- AI 預覽小方格 -->
-            <div class="debug-label">AI 數位燈定向轉正預覽</div>
+            <div class="debug-label">AI 數位燈黑白即時預覽</div>
             <canvas id="debug-canvas"></canvas>
         </div>
 
@@ -126,7 +126,7 @@
             </div>
         </div>
 
-        <div id="status-bar">⏳ 系統啟動中，請準備進行【右手】測驗...</div>
+        <div id="status-bar">⏳ 系統啟動中，請將手握器放入綠框內...</div>
         <div id="control-area"></div>
     </div>
 
@@ -146,23 +146,23 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = 'TEST_USER';
     let pose = null, mediaStream = null, tesseractWorker = null;
     
-    let currentHand = 'right', currentAttempt = 1; // 'right' 或 'left'
+    let currentHand = 'right', currentAttempt = 1;
     let rightAttempts = [], leftAttempts = [];
     let state = 'WAITING_FOR_TARGET'; 
     
     let maxGripScore = 0.0;
     let latestOcrValue = 0.0;
     let isOcrProcessing = false;
-    let isBodyDetected = false;
+    let isBodyDetected = true; // 預設為 true，避免未偵測到全身時卡住
     let isDeviceDetected = false;
-    let detectedHandSide = null; // 'right' 或 'left' (用 MediaPipe 判斷)
+    let detectedHandSide = 'right';
     let countdownTimer = null, testTimer = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
@@ -170,7 +170,6 @@
         if (urlParams.get('user_id')) currentUserId = urlParams.get('user_id');
         document.getElementById('current-user-label').innerText = currentUserId;
 
-        // 強制確保相機與選單在載入時自動啟動
         await startWebcam();
         await initCameraDevices();
         
@@ -235,13 +234,12 @@
         }
     }
 
-    // 🎯 核心：利用 MediaPipe 骨架辨識當前是使用左手還是右手拿握力計
     function initMediaPipePose() {
         const videoElement = document.getElementById('webcam');
         const canvasElement = document.getElementById('output-canvas');
         const canvasCtx = canvasElement.getContext('2d');
         pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
-        pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.3, minTrackingConfidence: 0.3 });
         
         pose.onResults((results) => {
             canvasElement.width = videoElement.videoWidth || 640;
@@ -252,18 +250,14 @@
             if (results.poseLandmarks) {
                 isBodyDetected = true;
                 drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00e676', lineWidth: 2 });
-
-                // 取得手腕與肩膀座標判定左右手 (landmark 15: 右手腕, 16: 左手腕)
                 let rWrist = results.poseLandmarks[15];
                 let lWrist = results.poseLandmarks[16];
-                
-                // 簡單根據畫面左右相對位置判定當前施力拿握力計的手
                 if (rWrist && lWrist) {
-                    // 畫面中若右手腕較活躍或靠近中心，判斷為右手；反之左手
                     detectedHandSide = (rWrist.z < lWrist.z || rWrist.x > lWrist.x) ? 'right' : 'left';
                 }
             } else {
-                isBodyDetected = false;
+                // 即使沒偵測到骨架，也允許量測（避免穿著寬鬆衣服導致 MediaPipe 斷開）
+                isBodyDetected = true; 
             }
             canvasCtx.restore();
         });
@@ -277,9 +271,9 @@
         requestAnimationFrame(poseLoop);
     }
 
-    // 🎯 核心 OCR 與 kg 定向邏輯
+    // 🎯 核心：極速高對比掃描與數學位數對應
     async function scanDeviceLCD(video) {
-        if (!video || video.readyState < 2) return 0;
+        if (!video || video.readyState < 2 || !tesseractWorker) return 0;
         const sw = video.videoWidth || 640;
         const sh = video.videoHeight || 480;
         
@@ -318,42 +312,41 @@
             const previewCtx = previewCanvas.getContext('2d');
             previewCtx.drawImage(testCanvas, 0, 0);
 
+            // 強化二值化
             let imgData = previewCtx.getImageData(0, 0, sWidth, sHeight);
             let data = imgData.data;
             for (let i = 0; i < data.length; i += 4) {
                 let brightness = 0.34 * data[i] + 0.5 * data[i + 1] + 0.16 * data[i + 2];
-                let color = brightness > 100 ? 255 : 0; 
+                let color = brightness > 90 ? 255 : 0; 
                 data[i] = data[i+1] = data[i+2] = color;
             }
             previewCtx.putImageData(imgData, 0, 0);
 
-            if (tesseractWorker) {
-                try {
-                    const { data: { text } } = await tesseractWorker.recognize(previewCanvas);
-                    let lowerText = text.toLowerCase();
-                    let cleanDigits = text.replace(/[^0-9]/g, '');
+            try {
+                const { data: { text } } = await tesseractWorker.recognize(previewCanvas);
+                let cleanDigits = text.replace(/[^0-9]/g, '');
 
-                    if (lowerText.includes('kg') && cleanDigits.length >= 2) {
-                        let parsedVal = 0;
-                        if (cleanDigits.length === 3) {
-                            let d1 = parseInt(cleanDigits[0]);
-                            let d2 = parseInt(cleanDigits[1]);
-                            let d3 = parseInt(cleanDigits[2]);
-                            parsedVal = (d1 * 10) + d2 + (d3 * 0.1);
-                        } else if (cleanDigits.length === 2) {
-                            let d1 = parseInt(cleanDigits[0]);
-                            let d2 = parseInt(cleanDigits[1]);
-                            parsedVal = d1 + (d2 * 0.1); 
-                        }
-
-                        if (parsedVal >= 0.5 && parsedVal <= 60.0) {
-                            bestVal = Math.round(parsedVal * 2) / 2; // 0.5 kg 結算
-                            selectedCanvas = previewCanvas;
-                            break;
-                        }
+                // 💡 只要抓到 2 到 3 位純數字就立刻解析（不需要強制要求抓到 kg，大幅提升反應速度）
+                if (cleanDigits.length >= 2) {
+                    let parsedVal = 0;
+                    if (cleanDigits.length === 3) {
+                        let d1 = parseInt(cleanDigits[0]);
+                        let d2 = parseInt(cleanDigits[1]);
+                        let d3 = parseInt(cleanDigits[2]);
+                        parsedVal = (d1 * 10) + d2 + (d3 * 0.1);
+                    } else if (cleanDigits.length === 2) {
+                        let d1 = parseInt(cleanDigits[0]);
+                        let d2 = parseInt(cleanDigits[1]);
+                        parsedVal = d1 + (d2 * 0.1); 
                     }
-                } catch (e) {}
-            }
+
+                    if (parsedVal >= 0.5 && parsedVal <= 60.0) {
+                        bestVal = Math.round(parsedVal * 2) / 2; // 0.5 kg 結算
+                        selectedCanvas = previewCanvas;
+                        break;
+                    }
+                }
+            } catch (e) {}
         }
 
         const debugCanvas = document.getElementById('debug-canvas');
@@ -375,10 +368,9 @@
                 isOcrProcessing = false;
             }
         }
-        setTimeout(ocrLoop, 300);
+        setTimeout(ocrLoop, 250); // 加快檢測頻率
     }
 
-    // 💡 智慧狀態機：自動檢測並比對左右手，達成「全程自動測驗」
     function startMainStateMachine() {
         setInterval(() => {
             if (state === 'WAITING_FOR_TARGET') {
@@ -386,25 +378,13 @@
                 let handName = currentHand === 'right' ? '右手' : '左手';
                 document.getElementById('current-hand-label').innerText = `${handName} (${currentAttempt}/3)`;
 
-                if (isBodyDetected && isDeviceDetected) {
-                    // 💡 防呆檢查：檢查學生拿的是不是正確的手
-                    if (detectedHandSide && detectedHandSide !== currentHand) {
-                        let wrongName = detectedHandSide === 'right' ? '右手' : '左手';
-                        let correctName = currentHand === 'right' ? '右手' : '左手';
-                        document.getElementById('status-bar').innerText = `⚠️ 偵測到您使用【${wrongName}】，請改用【${correctName}】拿握力計！`;
-                        speak(`請換${correctName}拿握力計`);
-                        return;
-                    }
-
+                if (isDeviceDetected) {
                     startCountdown();
                 } else {
-                    let msg = `⏳ 請準備 (${handName} 第 ${currentAttempt} 次)`;
-                    if (!isBodyDetected) msg += " [未偵測上半身]";
-                    if (!isDeviceDetected) msg += " [請將螢幕置於綠框內]";
-                    document.getElementById('status-bar').innerText = msg;
+                    document.getElementById('status-bar').innerText = `⏳ 請將手握器螢幕放入綠框內 (${handName} 第 ${currentAttempt} 次)...`;
                 }
             }
-        }, 800);
+        }, 400);
     }
 
     function startCountdown() {
@@ -472,7 +452,6 @@
         }, 1000);
     }
 
-    // 💡 全自動化流程：不需手動按鈕，達成自動進行下一次或自動切換左手
     function showAttemptConfirmUI(score) {
         let handName = currentHand === 'right' ? '右手' : '左手';
         const statusBar = document.getElementById('status-bar');
@@ -483,7 +462,6 @@
                 currentAttempt++;
                 resetToWaiting();
             } else {
-                // 三次完成後自動切換至左手或結算
                 if (currentHand === 'right') {
                     currentHand = 'left';
                     currentAttempt = 1;
@@ -494,7 +472,7 @@
                     showFinalUploadUI();
                 }
             }
-        }, 3000); // 停留 3 秒讓學生看見成績後自動推進
+        }, 3000);
     }
 
     function showFinalUploadUI() {
@@ -504,8 +482,6 @@
         
         document.getElementById('status-bar').innerHTML = `📊 結算：右手 <b>${bestRight} kg</b> | 左手 <b>${bestLeft} kg</b><br>⏳ 正在自動上傳至雲端...`;
         speak("左右手測驗全部完成，正在上傳成績");
-        
-        // 自動上傳
         confirmUploadAll(bestRight, bestLeft);
     }
 
