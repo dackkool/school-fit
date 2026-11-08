@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 全自動智慧手握力測驗 | Grip Strength Challenge</title>
-    <!-- Tesseract.js 用於智慧 OCR 辨識 -->
+    <title>AI 智能手握力測驗 | Grip Strength Challenge</title>
+    <!-- Tesseract.js 用於 7 段數位燈 OCR 辨識 -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <!-- Supabase JS 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -56,6 +56,12 @@
 
         #status-bar { background: rgba(255, 152, 0, 0.15); border: 1px solid #ff9800; color: #ff9800; padding: 10px; border-radius: 8px; text-align: center; font-size: 0.9rem; font-weight: bold; margin-bottom: 10px; }
 
+        button.btn-primary { width: 100%; padding: 12px; font-size: 1rem; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background-color: #ff9800; margin-top: 5px; }
+        button.btn-primary:hover { opacity: 0.9; }
+        button.btn-primary:disabled { background-color: #555; color: #888; cursor: not-allowed; }
+
+        .action-btn-group { display: flex; gap: 10px; margin-top: 5px; }
+
         .history-container { background: #2a2a2a; border-radius: 10px; padding: 10px; max-height: 380px; overflow-y: auto; }
         table.history-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         table.history-table th, table.history-table td { border: 1px solid #444; padding: 6px; text-align: center; }
@@ -65,11 +71,11 @@
 <body>
 
 <div id="main-card">
-    <h1>AI 全自動手握力測驗</h1>
-    <div class="subtitle">完全全自動・自動正反向辨識・OCR 智能讀取・雲端記錄</div>
+    <h1>AI 智能手握力測驗</h1>
+    <div class="subtitle">7段數位燈精準 OCR・防呆未偵測・手動控制與確認上傳</div>
 
     <div class="tab-header">
-        <button class="tab-btn active" onclick="switchTab('challenge')">🦾 全自動握力測驗</button>
+        <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
         <button class="tab-btn" onclick="switchTab('history')">📋 歷史成績</button>
     </div>
 
@@ -91,7 +97,7 @@
             <video id="webcam" autoplay muted playsinline></video>
             <!-- 螢幕對準框 -->
             <div class="roi-guide-box">
-                <div class="roi-label">請將握力計螢幕置於此綠框內 (全自動偵測)</div>
+                <div class="roi-label">請將握力計螢幕置於此綠框內</div>
             </div>
         </div>
 
@@ -106,7 +112,11 @@
             </div>
         </div>
 
-        <div id="status-bar">⏳ 正在初始化 AI 光學辨識引擎...</div>
+        <div id="status-bar">⏳ 正在初始化系統與 OCR 引擎...</div>
+
+        <div id="control-area">
+            <button class="btn-primary" id="start-btn" onclick="startGripTest()" disabled>▶️ 開始 5 秒強力緊握測驗</button>
+        </div>
     </div>
 
     <!-- TAB 2: 歷史記錄 -->
@@ -134,8 +144,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = null;
@@ -144,7 +154,7 @@
     let isTesting = false;
     let maxGripScore = 0.0;
     let tesseractWorker = null;
-    let autoDetectInterval = null;
+    let ocrInterval = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -232,10 +242,9 @@
             mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
             videoElement.srcObject = mediaStream;
             await videoElement.play();
-            console.log("相機串流順暢執行中");
         } catch (err) {
             console.error("相機啟動失敗:", err);
-            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限，請檢查瀏覽器設定！";
+            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！";
         }
     }
 
@@ -246,28 +255,25 @@
 
     async function initTesseractOCR() {
         try {
-            document.getElementById('status-bar').innerText = "⏳ 正在初始化 AI 光學辨識引擎 (OCR)...";
+            document.getElementById('status-bar').innerText = "⏳ 正在初始化 7 段數位燈 OCR 引擎...";
             tesseractWorker = await Tesseract.createWorker('eng');
             await tesseractWorker.setParameters({
                 tessedit_char_whitelist: '0123456789.',
             });
-            document.getElementById('status-bar').innerText = "✅ 全自動就緒！請將握力計螢幕置於綠色框內，系統會自動偵測數值並測驗。";
-            
-            // 啟動全自動背景偵測迴圈 (每 700ms 掃描一次畫面)
-            autoDetectInterval = setInterval(autoDetectAndRunTest, 700);
+            document.getElementById('status-bar').innerText = "✅ 系統就緒！請將握力計螢幕置於綠色框內，點擊下方按鈕開始測驗。";
+            document.getElementById('start-btn').disabled = false;
         } catch (e) {
             console.error("Tesseract 初始化失敗", e);
             document.getElementById('status-bar').innerText = "⚠️ OCR 載入失敗。";
         }
     }
 
-    // 智能 OCR 辨識核心 (支援 0度 與 180度自動反轉)
+    // 針對 7 段數字燈進行高對比二值化處理的 OCR 辨識核心
     async function recognizeLCDNumber(video) {
         if (!tesseractWorker) return 0;
         const sw = video.videoWidth || 640;
         const sh = video.videoHeight || 480;
         
-        // 抓取綠色對準框範圍
         const sx = sw * 0.15;
         const sy = sh * 0.25;
         const sWidth = sw * 0.7;
@@ -278,6 +284,17 @@
         tempCanvas.height = sHeight;
         const ctx = tempCanvas.getContext('2d');
         ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
+
+        // 影像處理：拉高對比與灰階化，讓 7 段數位燈更清晰
+        let imgData = ctx.getImageData(0, 0, sWidth, sHeight);
+        let data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+            // 強化閥值，使數位燈白色/亮色字體更突顯
+            let v = avg > 140 ? 255 : 0; 
+            data[i] = v; data[i + 1] = v; data[i + 2] = v;
+        }
+        ctx.putImageData(imgData, 0, 0);
 
         try {
             const values = [];
@@ -305,33 +322,20 @@
         }
     }
 
-    // 全自動偵測：當畫面中偵測到大於 0.5kg 的數值時，自動啟動 5 秒計時測驗！
-    async function autoDetectAndRunTest() {
-        if (isTesting || !tesseractWorker) return;
-        const video = document.getElementById('webcam');
-        if (!video || video.paused || video.ended || video.readyState < 2) return;
+    // 點擊開始測驗（手動觸發 5 秒強力緊握）
+    function startGripTest() {
+        if (!currentUserId || isTesting) return;
 
-        let detectedVal = await recognizeLCDNumber(video);
-        if (detectedVal > 0.5) {
-            // 觸發全自動測驗！
-            triggerAutomaticGripTest(detectedVal);
-        }
-    }
-
-    function triggerAutomaticGripTest(initialVal) {
         isTesting = true;
-        maxGripScore = initialVal;
-        document.getElementById('current-grip-display').innerText = `${initialVal} kg`;
-        document.getElementById('max-grip-display').innerText = `${maxGripScore} kg`;
+        maxGripScore = 0.0;
+        document.getElementById('max-grip-display').innerText = '0.0 kg';
+        document.getElementById('start-btn').disabled = true;
 
-        speak("偵測到握力，自動測驗開始！");
-        document.getElementById('status-bar').style.backgroundColor = 'rgba(0, 230, 118, 0.2)';
-        document.getElementById('status-bar').style.borderColor = '#00e676';
-        document.getElementById('status-bar').style.color = '#00e676';
+        speak("請全力握緊握力計！測驗開始！");
+        document.getElementById('status-bar').innerText = "💪 測驗中 (5秒)：請持續用力緊握...";
 
         let timeLeft = 5;
         let testTimer = setInterval(async () => {
-            // 在 5 秒測驗期間持續抓取畫面中的最大峰值
             const video = document.getElementById('webcam');
             if (video && video.readyState >= 2) {
                 let currentVal = await recognizeLCDNumber(video);
@@ -351,44 +355,97 @@
 
             if (timeLeft <= 0) {
                 clearInterval(testTimer);
-                
-                document.getElementById('status-bar').innerText = `🎉 測驗完成！本輪最佳握力：${maxGripScore} kg，已自動上傳雲端！`;
-                speak(`測驗完成，最佳成績 ${maxGripScore} 公斤。`);
-                
-                await uploadResult(currentUserId, maxGripScore);
+                clearInterval(ocrInterval);
+                isTesting = false;
 
-                // 休息 3 秒後恢復全自動待命狀態
-                setTimeout(() => {
-                    isTesting = false;
-                    maxGripScore = 0.0;
-                    document.getElementById('current-grip-display').innerText = '0.0 kg';
-                    document.getElementById('max-grip-display').innerText = '0.0 kg';
-                    document.getElementById('status-bar').style.backgroundColor = 'rgba(255, 152, 0, 0.15)';
-                    document.getElementById('status-bar').style.borderColor = '#ff9800';
-                    document.getElementById('status-bar').style.color = '#ff9800';
-                    document.getElementById('status-bar').innerText = "✅ 準備就緒！請將握力計螢幕置於綠色框內，隨時可進行下一次測驗。";
-                }, 3000);
+                // 防呆：如果 5 秒內完全沒偵測到握力器數字
+                if (maxGripScore <= 0) {
+                    document.getElementById('status-bar').innerText = "⚠️ 未偵測到手握器或螢幕數字，請確認是否有將螢幕對準綠框！";
+                    speak("未偵測到手握器數字，請重新測驗。");
+                    document.getElementById('start-btn').disabled = false;
+                    document.getElementById('start-btn').innerText = "▶️ 重新開始測驗";
+                    return;
+                }
+
+                // 測驗結束，詢問使用者是否確定上傳
+                speak(`測驗完成，最高成績 ${maxGripScore} 公斤。`);
+                showConfirmUploadUI(maxGripScore);
             }
         }, 1000);
+
+        ocrInterval = setInterval(async () => {
+            if (isTesting) {
+                const video = document.getElementById('webcam');
+                if (video && video.readyState >= 2) {
+                    let currentVal = await recognizeLCDNumber(video);
+                    if (currentVal > 0) {
+                        document.getElementById('current-grip-display').innerText = `${currentVal} kg`;
+                        if (currentVal > maxGripScore) {
+                            maxGripScore = currentVal;
+                            document.getElementById('max-grip-display').innerText = `${maxGripScore} kg`;
+                        }
+                    }
+                }
+            }
+        }, 500);
     }
 
-    async function uploadResult(studentId, score) {
+    // 顯示「確認是否上傳」與「再測一次」按鈕介面
+    function showConfirmUploadUI(score) {
+        const statusBar = document.getElementById('status-bar');
+        statusBar.style.backgroundColor = 'rgba(0, 230, 118, 0.2)';
+        statusBar.style.borderColor = '#00e676';
+        statusBar.style.color = '#00e676';
+        statusBar.innerHTML = `🎉 本輪最佳成績：<b>${score} kg</b>。請問是否確定上傳至雲端？`;
+
+        const controlArea = document.getElementById('control-area');
+        controlArea.innerHTML = `
+            <div class="action-btn-group">
+                <button class="btn-primary" onclick="confirmUpload(${score})" style="background-color: #2e7d32; flex: 1;">✔️ 確定上傳成績</button>
+                <button class="btn-primary" onclick="resetTest()" style="background-color: #d32f2f; flex: 1;">❌ 放棄並再測一次</button>
+            </div>
+        `;
+    }
+
+    // 確認上傳至 Supabase
+    async function confirmUpload(score) {
+        document.getElementById('status-bar').innerText = "⏳ 正在上傳成績至雲端...";
         try {
             const { error } = await supabaseClient.from('fitness_records').insert([
                 { 
-                    student_id: studentId, 
+                    student_id: currentUserId, 
                     category: 'grip_strength', 
                     score_value: score, 
                     created_at: new Date() 
                 }
             ]);
             if (error) throw error;
-            console.log("握力成績上傳成功");
+            
+            document.getElementById('status-bar').innerText = "✅ 成績已成功上傳至雲端！";
+            speak("成績上傳成功");
             loadHistory();
+            resetTest();
         } catch (err) {
             console.error("成績上傳失敗", err);
-            alert("成績上傳雲端失敗，請確認 Supabase 是否已正確建立 fitness_records 表格！");
+            alert("成績上傳雲端失敗，請檢查資料表！");
+            resetTest();
         }
+    }
+
+    // 重置介面，準備再測一次
+    function resetTest() {
+        maxGripScore = 0.0;
+        document.getElementById('current-grip-display').innerText = '0.0 kg';
+        document.getElementById('max-grip-display').innerText = '0.0 kg';
+        document.getElementById('status-bar').style.backgroundColor = 'rgba(255, 152, 0, 0.15)';
+        document.getElementById('status-bar').style.borderColor = '#ff9800';
+        document.getElementById('status-bar').style.color = '#ff9800';
+        document.getElementById('status-bar').innerText = "✅ 準備就緒！請將握力計螢幕置於綠色框內，點擊下方按鈕開始。";
+
+        const controlArea = document.getElementById('control-area');
+        controlArea.innerHTML = `
+            <button class="btn-primary" id="start-btn" onclick="startGripTest()">🔄 再測一次 (開始 5 秒測驗)</button>
+        `;
     }
 
     async function loadHistory() {
