@@ -34,7 +34,7 @@
 
         .video-wrapper { position: relative; width: 100%; height: 280px; border-radius: 12px; overflow: hidden; border: 2.5px solid #ff9800; background: #000; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
         
-        /* 💡 核心：將預覽畫面進行左右鏡像翻轉，確保前置鏡頭顯示正常 */
+        /* 預覽畫面自動修復鏡像 */
         video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; transform: scaleX(-1); }
 
@@ -78,7 +78,7 @@
 
 <div id="main-card">
     <h1>AI 全自動智慧手握力測驗</h1>
-    <div class="subtitle">左右鏡像翻轉・KG 方向與數位燈辨識・3秒自動倒數</div>
+    <div class="subtitle">EH101 定位校正・kg 定向技術・3秒自動倒數・雲端記錄</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 全自動握力測驗</button>
@@ -102,9 +102,9 @@
         <div class="video-wrapper">
             <video id="webcam" autoplay muted playsinline></video>
             <canvas id="output-canvas"></canvas>
-            <!-- 螢幕對準框 -->
+            <!-- 螢幕指定對準框 -->
             <div class="roi-guide-box">
-                <div class="roi-label">請將指定手握器螢幕置於此框內</div>
+                <div class="roi-label">請將握力計螢幕置於此框內</div>
             </div>
         </div>
 
@@ -149,8 +149,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = null;
@@ -260,10 +260,9 @@
 
     async function initTesseractOCR() {
         try {
-            // 允許辨識數字、小數點以及 kg 單位判定方向
             tesseractWorker = await Tesseract.createWorker('eng');
             await tesseractWorker.setParameters({
-                tessedit_char_whitelist: '0123456789.kgKG',
+                tessedit_char_whitelist: '0123456789kg',
             });
             startMainLoop();
         } catch (e) {
@@ -316,7 +315,7 @@
         requestAnimationFrame(poseLoop);
     }
 
-    // 💡 智慧掃描：透過偵測畫面中的數字與 kg 方向來自動校正
+    // 🎯 核心：基於 kg 定位與固定位數架構 (十位、個位、小數第一位) 解析
     async function scanDeviceLCD(video) {
         if (!tesseractWorker) return 0;
         const sw = video.videoWidth || 640;
@@ -327,29 +326,46 @@
         const sWidth = sw * 0.6;
         const sHeight = sh * 0.35;
 
+        // 建立修正鏡像後的暫存 Canvas
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = sWidth;
         tempCanvas.height = sHeight;
         const ctx = tempCanvas.getContext('2d');
-        // 同步進行水平反轉以抵銷預覽鏡像
         ctx.translate(sWidth, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
         try {
-            const { data: { text } } = await tesseractWorker.recognize(tempCanvas);
+            // 解析辨識到的文字與區塊
+            const { data: { text, symbols } } = await tesseractWorker.recognize(tempCanvas);
             
-            // 檢查是否包含 kg 單位或是有效數字，確保真的是手握力計螢幕
-            let cleanText = text.toLowerCase();
-            let hasKg = cleanText.includes('kg');
+            // 抓出所有純數字字元
+            let rawDigits = text.replace(/[^0-9]/g, '');
             
-            let cleaned = text.replace(/[^0-9.]/g, '');
-            let val = parseFloat(cleaned);
+            if (rawDigits.length >= 2) {
+                let parsedVal = 0;
+                
+                // 1. 若辨識出 3 個數字（例如 1, 0, 0），依據 kg 左邊固定的排版規則：
+                // [十位] [個位] . [小數第一位]  => 10.0
+                if (rawDigits.length === 3) {
+                    let d1 = parseInt(rawDigits[0]); // 十位
+                    let d2 = parseInt(rawDigits[1]); // 個位
+                    let d3 = parseInt(rawDigits[2]); // 小數第一位
+                    parsedVal = (d1 * 10) + d2 + (d3 * 0.1);
+                } 
+                // 2. 若只抓到 2 個數字（例如 9, 9），自動補算小數點 => 9.9
+                else if (rawDigits.length === 2) {
+                    let d1 = parseInt(rawDigits[0]); // 個位
+                    let d2 = parseInt(rawDigits[1]); // 小數第一位
+                    parsedVal = d1 + (d2 * 0.1);
+                }
 
-            // 合理性過濾：必須在 1.0 ~ 99.9 kg 之間
-            if (!isNaN(val) && val >= 1.0 && val <= 99.9) {
-                return val;
+                // 合理性範疇過濾：0.5 kg ~ 99.9 kg
+                if (parsedVal >= 0.5 && parsedVal <= 99.9) {
+                    return parseFloat(parsedVal.toFixed(1));
+                }
             }
+
             return 0;
         } catch (err) {
             return 0;
@@ -370,7 +386,7 @@
                 } else {
                     let msg = "⏳ 請將上半身入鏡";
                     if (!isBodyDetected) msg += " (未偵測到人體)";
-                    if (!isDeviceDetected) msg += "，並將手握器置於綠框內";
+                    if (!isDeviceDetected) msg += "，並將手握器螢幕置於綠框內";
                     document.getElementById('status-bar').innerText = msg;
                 }
             }
