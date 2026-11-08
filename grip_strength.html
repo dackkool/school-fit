@@ -144,8 +144,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = null;
@@ -156,7 +156,7 @@
     let maxGripScore = 0.0;
     let tesseractWorker = null;
     let ocrInterval = null;
-    let isBodyDetected = false;
+    let isRunningPrediction = false;
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -237,19 +237,21 @@
         }
 
         const constraints = {
-            video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment' },
+            video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
             audio: false
         };
 
         try {
             mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
             videoElement.srcObject = mediaStream;
-            await new Promise((resolve) => {
+            
+            await new Promise((resolve, reject) => {
                 videoElement.onloadedmetadata = () => {
-                    videoElement.play();
-                    resolve();
+                    videoElement.play().then(resolve).catch(reject);
                 };
+                setTimeout(resolve, 1500);
             });
+            console.log("相機串流啟動成功");
         } catch (err) {
             console.error("相機啟動失敗:", err);
             document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限，請檢查瀏覽器設定！";
@@ -295,6 +297,7 @@
         });
 
         pose.onResults((results) => {
+            if (!canvasElement || !canvasCtx) return;
             canvasElement.width = videoElement.videoWidth || 640;
             canvasElement.height = videoElement.videoHeight || 480;
 
@@ -303,31 +306,37 @@
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
             if (results.poseLandmarks) {
-                isBodyDetected = true;
                 drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00e676', lineWidth: 2 });
                 drawLandmarks(canvasCtx, results.poseLandmarks, { color: '#ff9800', lineWidth: 1 });
-            } else {
-                isBodyDetected = false;
             }
             canvasCtx.restore();
         });
 
-        async function predictionLoop() {
-            if (videoElement.readyState === 4 && !videoElement.paused && !videoElement.ended) {
-                await pose.send({ image: videoElement });
-            }
-            requestAnimationFrame(predictionLoop);
+        if (!isRunningPrediction) {
+            isRunningPrediction = true;
+            predictWebcam();
         }
-        requestAnimationFrame(predictionLoop);
+    }
+
+    async function predictWebcam() {
+        const videoElement = document.getElementById('webcam');
+        if (videoElement && videoElement.readyState >= 2 && !videoElement.paused && !videoElement.ended) {
+            try {
+                await pose.send({ image: videoElement });
+            } catch (e) {
+                console.error("Pose frame error:", e);
+            }
+        }
+        requestAnimationFrame(predictWebcam);
     }
 
     async function captureAndReadLCD() {
         if (!tesseractWorker) return;
         const video = document.getElementById('webcam');
-        if (video.paused || video.ended) return;
+        if (!video || video.paused || video.ended || video.readyState < 2) return;
 
-        const sw = video.videoWidth;
-        const sh = video.videoHeight;
+        const sw = video.videoWidth || 640;
+        const sh = video.videoHeight || 480;
         
         const sx = sw * 0.2;
         const sy = sh * 0.3;
@@ -413,10 +422,10 @@
         }, 500);
     }
 
-    // 🔄 對接共用 `fitness_record` 表格，category 設定為 'grip_strength'，數值存入 'score_value'
+    // 🔄 對接共用 `fitness_records` 表格
     async function uploadResult(studentId, score) {
         try {
-            const { error } = await supabaseClient.from('fitness_record').insert([
+            const { error } = await supabaseClient.from('fitness_records').insert([
                 { 
                     student_id: studentId, 
                     category: 'grip_strength', 
@@ -429,18 +438,18 @@
             loadHistory();
         } catch (err) {
             console.error("成績上傳失敗", err);
-            alert("成績上傳雲端失敗，請確認 Supabase 是否已正確建立 fitness_record 表格！");
+            alert("成績上傳雲端失敗，請確認 Supabase 是否已正確建立 fitness_records 表格！");
         }
     }
 
-    // 📋 從共用 `fitness_record` 撈取 category 為 'grip_strength' 的個人歷史記錄
+    // 📋 從共用 `fitness_records` 撈取 category 為 'grip_strength' 的個人歷史記錄
     async function loadHistory() {
         const tbody = document.getElementById('history-tbody');
         tbody.innerHTML = `<tr><td colspan="4" style="color: #ff9800; padding: 15px;">載入記錄中...</td></tr>`;
 
         try {
             const { data, error } = await supabaseClient
-                .from('fitness_record')
+                .from('fitness_records')
                 .select('*')
                 .eq('student_id', currentUserId)
                 .eq('category', 'grip_strength')
@@ -468,7 +477,7 @@
             });
         } catch (err) {
             console.error("載入歷史記錄失敗:", err);
-            tbody.innerHTML = `<tr><td colspan="4" style="color: #f44336; padding: 15px;">載入出錯：請確認 Supabase 已建立 <b>fitness_record</b> 表 (含 student_id, category, score_value, created_at)。</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="4" style="color: #f44336; padding: 15px;">載入出錯：請確認 Supabase 已建立 <b>fitness_records</b> 表 (含 student_id, category, score_value, created_at)。</td></tr>`;
         }
     }
 
