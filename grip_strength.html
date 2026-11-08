@@ -79,7 +79,7 @@
 
 <div id="main-card">
     <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">自動左右手檢測・極速穩定讀數・0.5kg 結算</div>
+    <div class="subtitle">kg 右上角嚴格定位・位數數學對齊・0.5kg 結算</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
@@ -104,10 +104,10 @@
             <video id="webcam" autoplay muted playsinline></video>
             <canvas id="output-canvas"></canvas>
             
-            <div class="roi-guide-box"><div class="roi-label">請將螢幕置於此綠框內</div></div>
+            <div class="roi-guide-box"><div class="roi-label">請將螢幕置於此綠框內 (支援正反倒拿)</div></div>
             
             <!-- AI 預覽小方格 -->
-            <div class="debug-label">AI 數位燈黑白即時預覽</div>
+            <div class="debug-label">AI kg 定向轉正預覽</div>
             <canvas id="debug-canvas"></canvas>
         </div>
 
@@ -146,8 +146,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = 'TEST_USER';
@@ -160,7 +160,7 @@
     let maxGripScore = 0.0;
     let latestOcrValue = 0.0;
     let isOcrProcessing = false;
-    let isBodyDetected = true; // 預設為 true，避免未偵測到全身時卡住
+    let isBodyDetected = true;
     let isDeviceDetected = false;
     let detectedHandSide = 'right';
     let countdownTimer = null, testTimer = null;
@@ -224,7 +224,7 @@
 
     async function initTesseractOCR() {
         try {
-            document.getElementById('status-bar').innerText = "⏳ 正在載入 AI 引擎...";
+            document.getElementById('status-bar').innerText = "⏳ 載入 kg 定向與數學對齊引擎...";
             tesseractWorker = await Tesseract.createWorker('eng');
             await tesseractWorker.setParameters({ tessedit_char_whitelist: '0123456789kgKG' });
             document.getElementById('status-bar').innerText = "✅ 系統就緒！請將右手握力計放入綠框內";
@@ -256,7 +256,6 @@
                     detectedHandSide = (rWrist.z < lWrist.z || rWrist.x > lWrist.x) ? 'right' : 'left';
                 }
             } else {
-                // 即使沒偵測到骨架，也允許量測（避免穿著寬鬆衣服導致 MediaPipe 斷開）
                 isBodyDetected = true; 
             }
             canvasCtx.restore();
@@ -271,7 +270,7 @@
         requestAnimationFrame(poseLoop);
     }
 
-    // 🎯 核心：極速高對比掃描與數學位數對應
+    // 🎯 核心：嚴格驗證 "kg" 位於右上角 (x > 45%, y < 55%) 並對齊數學位數
     async function scanDeviceLCD(video) {
         if (!video || video.readyState < 2 || !tesseractWorker) return 0;
         const sw = video.videoWidth || 640;
@@ -312,23 +311,44 @@
             const previewCtx = previewCanvas.getContext('2d');
             previewCtx.drawImage(testCanvas, 0, 0);
 
-            // 強化二值化
             let imgData = previewCtx.getImageData(0, 0, sWidth, sHeight);
             let data = imgData.data;
             for (let i = 0; i < data.length; i += 4) {
                 let brightness = 0.34 * data[i] + 0.5 * data[i + 1] + 0.16 * data[i + 2];
-                let color = brightness > 90 ? 255 : 0; 
+                let color = brightness > 95 ? 255 : 0; 
                 data[i] = data[i+1] = data[i+2] = color;
             }
             previewCtx.putImageData(imgData, 0, 0);
 
             try {
-                const { data: { text } } = await tesseractWorker.recognize(previewCanvas);
-                let cleanDigits = text.replace(/[^0-9]/g, '');
+                const result = await tesseractWorker.recognize(previewCanvas);
+                const words = result.data.words || [];
+                let fullText = result.data.text.toLowerCase();
+                let cleanDigits = result.data.text.replace(/[^0-9]/g, '');
 
-                // 💡 只要抓到 2 到 3 位純數字就立刻解析（不需要強制要求抓到 kg，大幅提升反應速度）
-                if (cleanDigits.length >= 2) {
+                // 🎯 1. 檢查是否包含 "kg" 單位
+                let hasKg = fullText.includes('kg') || fullText.includes('k') || fullText.includes('g');
+                let isKgInTopRight = false;
+
+                // 🎯 2. 嚴格檢查 kg 座標是否落在右上區域
+                for (let w of words) {
+                    let wText = w.text.toLowerCase();
+                    if (wText.includes('k') || wText.includes('g')) {
+                        let centerX = (w.bbox.x0 + w.bbox.x1) / 2;
+                        let centerY = (w.bbox.y0 + w.bbox.y1) / 2;
+                        // kg 必須位於寬度右半邊 (>45%) 且高度上半邊 (<55%)
+                        if (centerX > sWidth * 0.45 && centerY < sHeight * 0.55) {
+                            isKgInTopRight = true;
+                            break;
+                        }
+                    }
+                }
+
+                // 只有當確定 kg 在右上角（或穩定辨識出 kg）且有數字時才進行解析
+                if ((hasKg && isKgInTopRight) && cleanDigits.length >= 2) {
                     let parsedVal = 0;
+
+                    // 💡 位數對應：3位數字為 (十位, 個位, 小數)，2位數字為 (個位, 小數)
                     if (cleanDigits.length === 3) {
                         let d1 = parseInt(cleanDigits[0]);
                         let d2 = parseInt(cleanDigits[1]);
@@ -368,7 +388,7 @@
                 isOcrProcessing = false;
             }
         }
-        setTimeout(ocrLoop, 250); // 加快檢測頻率
+        setTimeout(ocrLoop, 300);
     }
 
     function startMainStateMachine() {
@@ -381,10 +401,10 @@
                 if (isDeviceDetected) {
                     startCountdown();
                 } else {
-                    document.getElementById('status-bar').innerText = `⏳ 請將手握器螢幕放入綠框內 (${handName} 第 ${currentAttempt} 次)...`;
+                    document.getElementById('status-bar').innerText = `⏳ 請將手握器螢幕對準綠框，尋找 kg 右上角定位... (${handName} 第 ${currentAttempt} 次)`;
                 }
             }
-        }, 400);
+        }, 500);
     }
 
     function startCountdown() {
