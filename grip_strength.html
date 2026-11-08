@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AI 全自動智慧手握力測驗 | Grip Strength Challenge</title>
-    <!-- MediaPipe Pose (用於偵測上半身入鏡) -->
+    <!-- MediaPipe Pose -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <!-- Tesseract.js 用於專屬數位燈 OCR -->
@@ -32,9 +32,9 @@
         .camera-select-group label { font-size: 0.8rem; color: #4caf50; font-weight: bold; display: block; margin-bottom: 3px; }
         .camera-select-group select { width: 100%; padding: 6px; font-size: 0.9rem; border-radius: 8px; border: 1.5px solid #4caf50; background: #2a2a2a; color: white; }
 
-        .video-wrapper { position: relative; width: 100%; height: 320px; border-radius: 12px; overflow: hidden; border: 2.5px solid #ff9800; background: #000; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
-        video { display: none; }
-        canvas { width: 100%; height: 100%; object-fit: cover; }
+        .video-wrapper { position: relative; width: 100%; height: 280px; border-radius: 12px; overflow: hidden; border: 2.5px solid #ff9800; background: #000; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
 
         /* 螢幕指定對準框 */
         .roi-guide-box {
@@ -50,6 +50,7 @@
             display: flex;
             justify-content: center;
             align-items: flex-start;
+            z-index: 10;
         }
         .roi-label { background: rgba(0,230,118,0.9); color: black; font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 0 0 6px 6px; }
 
@@ -85,14 +86,14 @@
     <!-- TAB 1: 測驗與辨識 -->
     <div id="tab-challenge" class="tab-content active">
         <div class="user-info-banner">
-            <div>當前測驗學生：<span id="current-user-label">驗證中...</span></div>
+            <div>當前測驗學生：<span id="current-user-label">載入中...</span></div>
             <button onclick="window.location.href='index.html'" style="background: #444; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; cursor: pointer;">返回主頁</button>
         </div>
 
         <div class="camera-select-group">
             <label>選擇相機鏡頭：</label>
             <select id="camera-select" onchange="changeCamera()">
-                <option value="">載入鏡頭列表中...</option>
+                <option value="">載入鏡頭中...</option>
             </select>
         </div>
 
@@ -116,7 +117,7 @@
             </div>
         </div>
 
-        <div id="status-bar">⏳ 系統初始化中，請將上半身入鏡並準備好指定手握器...</div>
+        <div id="status-bar">⏳ 正在啟動相機與系統...</div>
         
         <div id="control-area"></div>
     </div>
@@ -146,15 +147,15 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = null;
-    let currentUserName = '';
+    let currentUserName = '訪客學生';
     let pose = null;
     let mediaStream = null;
-    let state = 'WAITING_FOR_TARGET'; // WAITING_FOR_TARGET -> COUNTING_DOWN -> TESTING -> CONFIRMING
+    let state = 'WAITING_FOR_TARGET'; 
     let maxGripScore = 0.0;
     let tesseractWorker = null;
     let isBodyDetected = false;
@@ -167,22 +168,20 @@
         currentUserId = urlParams.get('user_id');
 
         if (!currentUserId) {
-            alert('⚠️ 尚未登入！請先至登入頁面輸入學號。');
-            window.location.href = 'index.html';
-            return;
+            // 如果忘記帶入 user_id，給予預設防呆，避免直接卡死
+            currentUserId = 'TEST_USER';
+            document.getElementById('current-user-label').innerText = `未登入 (預設測試模式)`;
+        } else {
+            await verifyAndFetchUser(currentUserId);
         }
 
-        const isValidUser = await verifyAndFetchUser(currentUserId);
-        if (!isValidUser) {
-            alert('⚠️ 無效的學號或使用者不存在，請重新登入！');
-            window.location.href = 'index.html';
-            return;
-        }
-
-        await initCameraDevices();
+        // 優先確保相機啟動，不受資料庫連線影響
         await startWebcam();
-        await initMediaPipePose();
-        await initTesseractOCR();
+        await initCameraDevices();
+        
+        // 非同步載入 AI 模型
+        initMediaPipePose();
+        initTesseractOCR();
         loadHistory();
     });
 
@@ -194,13 +193,13 @@
                 .eq('student_id', userId)
                 .single();
 
-            if (error || !data) return false;
-            currentUserName = data.name;
-            document.getElementById('current-user-label').innerText = `${currentUserName} (${currentUserId})`;
-            return true;
+            if (data) {
+                currentUserName = data.name;
+                document.getElementById('current-user-label').innerText = `${currentUserName} (${currentUserId})`;
+            }
         } catch (e) {
-            console.error("驗證使用者失敗", e);
-            return false;
+            console.warn("無法取得學生姓名，使用學號代替", e);
+            document.getElementById('current-user-label').innerText = `${userId}`;
         }
     }
 
@@ -249,9 +248,10 @@
             mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
             videoElement.srcObject = mediaStream;
             await videoElement.play();
+            document.getElementById('status-bar').innerText = "✅ 相機已啟動！請將上半身入鏡並將手握器置於綠框內。";
         } catch (err) {
             console.error("相機啟動失敗:", err);
-            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！";
+            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！請確認是否使用 HTTPS 或允許瀏覽器存取鏡頭。";
         }
     }
 
@@ -262,16 +262,13 @@
 
     async function initTesseractOCR() {
         try {
-            document.getElementById('status-bar').innerText = "⏳ 正在初始化專屬 OCR 辨識引擎...";
             tesseractWorker = await Tesseract.createWorker('eng');
             await tesseractWorker.setParameters({
                 tessedit_char_whitelist: '0123456789.',
             });
-            document.getElementById('status-bar').innerText = "✅ 系統就緒！請上半身入鏡，並將指定手握器放入綠色框內。";
             startMainLoop();
         } catch (e) {
             console.error("Tesseract 初始化失敗", e);
-            document.getElementById('status-bar').innerText = "⚠️ OCR 引擎初始化失敗。";
         }
     }
 
@@ -299,8 +296,7 @@
 
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
+            // 繪製半透明骨架
             if (results.poseLandmarks) {
                 isBodyDetected = true;
                 drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00e676', lineWidth: 2 });
@@ -322,13 +318,11 @@
         requestAnimationFrame(poseLoop);
     }
 
-    // 專屬 OCR：嚴格針對指定款手握計的 LCD 7段數位燈與小數點格式進行過濾
     async function scanDeviceLCD(video) {
         if (!tesseractWorker) return 0;
         const sw = video.videoWidth || 640;
         const sh = video.videoHeight || 480;
         
-        // 對應綠色框範圍
         const sx = sw * 0.2;
         const sy = sh * 0.3;
         const sWidth = sw * 0.6;
@@ -340,22 +334,11 @@
         const ctx = tempCanvas.getContext('2d');
         ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
-        // 影像增強處理：過濾背景雜訊，精準突顯指定手握計的藍/白數位燈
-        let imgData = ctx.getImageData(0, 0, sWidth, sHeight);
-        let data = imgData.data;
-        for (let i = 0; i < data.length; i += 4) {
-            let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-            let v = avg > 140 ? 255 : 0; // 高亮過濾
-            data[i] = v; data[i + 1] = v; data[i + 2] = v;
-        }
-        ctx.putImageData(imgData, 0, 0);
-
         try {
             const { data: { text } } = await tesseractWorker.recognize(tempCanvas);
             let cleaned = text.replace(/[^0-9.]/g, '');
             let val = parseFloat(cleaned);
 
-            // 嚴格過濾：必須在合理體育手握力範圍內（1.0 ~ 99.9 kg）才視為有效讀數
             if (!isNaN(val) && val >= 1.0 && val <= 99.9) {
                 return val;
             }
@@ -365,7 +348,6 @@
         }
     }
 
-    // 主邏輯循環：全程自動偵測
     function startMainLoop() {
         setInterval(async () => {
             const video = document.getElementById('webcam');
@@ -376,19 +358,17 @@
                 isDeviceDetected = (currentVal > 0);
 
                 if (isBodyDetected && isDeviceDetected) {
-                    // 同時偵測到上半身與指定手握器！進入 3 秒倒數
                     startCountdown();
                 } else {
                     let msg = "⏳ 請將上半身入鏡";
                     if (!isBodyDetected) msg += " (未偵測到人體)";
-                    if (!isDeviceDetected) msg += "，並將指定手握器置於綠色框內";
+                    if (!isDeviceDetected) msg += "，並將手握器置於綠框內";
                     document.getElementById('status-bar').innerText = msg;
                 }
             }
         }, 800);
     }
 
-    // 自動倒數 3 秒
     function startCountdown() {
         state = 'COUNTING_DOWN';
         let count = 3;
@@ -408,7 +388,6 @@
         }, 1000);
     }
 
-    // 開始 5 秒強力緊握測驗
     function beginGripMeasurement() {
         state = 'TESTING';
         maxGripScore = 0.0;
@@ -442,7 +421,6 @@
             if (timeLeft <= 0) {
                 clearInterval(testTimer);
                 
-                // 防呆：如果完全沒抓到有效數字
                 if (maxGripScore <= 0) {
                     document.getElementById('status-bar').innerText = "⚠️ 未穩定讀取到手握器數值，請重新放置！";
                     speak("未讀取到數值，請重新測驗。");
@@ -450,7 +428,6 @@
                     return;
                 }
 
-                // 測驗完成，詢問是否確定上傳
                 state = 'CONFIRMING';
                 speak(`測驗完成，最高成績 ${maxGripScore} 公斤。`);
                 showConfirmUploadUI(maxGripScore);
@@ -504,7 +481,6 @@
         document.getElementById('status-bar').style.borderColor = '#ff9800';
         document.getElementById('status-bar').style.color = '#ff9800';
         document.getElementById('status-bar').innerText = "✅ 準備就緒！請將上半身入鏡，並將指定手握器置於綠色框內。";
-        document.getElementById('control-area.innerHTML = ''';
         document.getElementById('control-area').innerHTML = '';
     }
 
