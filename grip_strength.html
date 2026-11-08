@@ -33,6 +33,8 @@
         .camera-select-group select { width: 100%; padding: 6px; font-size: 0.9rem; border-radius: 8px; border: 1.5px solid #4caf50; background: #2a2a2a; color: white; }
 
         .video-wrapper { position: relative; width: 100%; height: 280px; border-radius: 12px; overflow: hidden; border: 2.5px solid #ff9800; background: #000; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
+        
+        /* 避免前置鏡頭左右反轉導致數字讀錯 */
         video { width: 100%; height: 100%; object-fit: cover; }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
 
@@ -91,7 +93,7 @@
         </div>
 
         <div class="camera-select-group">
-            <label>選擇相機鏡頭：</label>
+            <label>選擇相機鏡頭 (建議使用後置鏡頭)：</label>
             <select id="camera-select" onchange="changeCamera()">
                 <option value="">載入鏡頭中...</option>
             </select>
@@ -147,8 +149,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = null;
@@ -168,18 +170,15 @@
         currentUserId = urlParams.get('user_id');
 
         if (!currentUserId) {
-            // 如果忘記帶入 user_id，給予預設防呆，避免直接卡死
             currentUserId = 'TEST_USER';
             document.getElementById('current-user-label').innerText = `未登入 (預設測試模式)`;
         } else {
             await verifyAndFetchUser(currentUserId);
         }
 
-        // 優先確保相機啟動，不受資料庫連線影響
         await startWebcam();
         await initCameraDevices();
         
-        // 非同步載入 AI 模型
         initMediaPipePose();
         initTesseractOCR();
         loadHistory();
@@ -198,7 +197,6 @@
                 document.getElementById('current-user-label').innerText = `${currentUserName} (${currentUserId})`;
             }
         } catch (e) {
-            console.warn("無法取得學生姓名，使用學號代替", e);
             document.getElementById('current-user-label').innerText = `${userId}`;
         }
     }
@@ -239,20 +237,27 @@
             mediaStream.getTracks().forEach(track => track.stop());
         }
 
+        // 預設強制優先使用後置主鏡頭 (facingMode: 'environment')，避免前置鏡頭左右鏡像反轉問題
         const constraints = {
-            video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+            video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { exact: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } },
             audio: false
         };
 
         try {
             mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-            videoElement.srcObject = mediaStream;
-            await videoElement.play();
-            document.getElementById('status-bar').innerText = "✅ 相機已啟動！請將上半身入鏡並將手握器置於綠框內。";
         } catch (err) {
-            console.error("相機啟動失敗:", err);
-            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！請確認是否使用 HTTPS 或允許瀏覽器存取鏡頭。";
+            // 如果手機沒有獨立的後置鏡頭標籤，降級改用預設鏡頭
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+            } catch (e) {
+                document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！請確認瀏覽器設定。";
+                return;
+            }
         }
+
+        videoElement.srcObject = mediaStream;
+        await videoElement.play();
+        document.getElementById('status-bar').innerText = "✅ 相機已啟動！請將上半身入鏡並將手握器置於綠框內。";
     }
 
     async function changeCamera() {
@@ -296,7 +301,6 @@
 
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            // 繪製半透明骨架
             if (results.poseLandmarks) {
                 isBodyDetected = true;
                 drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00e676', lineWidth: 2 });
