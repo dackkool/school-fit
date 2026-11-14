@@ -7,8 +7,6 @@
     <!-- MediaPipe Pose -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <!-- Tesseract.js 用於數位 LCD 讀數 OCR -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <!-- Supabase JS 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
@@ -54,7 +52,7 @@
         }
         .roi-label { background: rgba(0,230,118,0.9); color: black; font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 0 0 6px 6px; }
 
-        /* AI 視覺除錯黑白預覽小方格 */
+        /* 樣板匹配除錯預覽小方格 */
         #debug-canvas { position: absolute; bottom: 5px; right: 5px; width: 110px; height: 65px; border: 2px solid #00e676; background: #000; z-index: 20; }
         .debug-label { position: absolute; bottom: 73px; right: 5px; font-size: 0.6rem; color: #00e676; z-index: 20; background: rgba(0,0,0,0.8); padding: 2px 5px; border-radius: 4px; }
 
@@ -79,7 +77,7 @@
 
 <div id="main-card">
     <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">精準 OCR 數位辨識・0.5kg 結算・完整測驗流程</div>
+    <div class="subtitle">dict/ 樣板匹配・0.5kg 結算・完整測驗流程</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
@@ -106,8 +104,8 @@
             
             <div class="roi-guide-box"><div class="roi-label">請將握力計螢幕置於此綠框內</div></div>
             
-            <!-- AI 預覽小方格 -->
-            <div class="debug-label">OCR 辨識預覽</div>
+            <!-- 樣板匹配除錯預覽小方格 -->
+            <div class="debug-label">樣板匹配預覽</div>
             <canvas id="debug-canvas"></canvas>
         </div>
 
@@ -126,7 +124,7 @@
             </div>
         </div>
 
-        <div id="status-bar">⏳ 系統啟動中，準備載入 AI 模型...</div>
+        <div id="status-bar">⏳ 正在載入 dict/ 0-9 樣板圖片...</div>
         <div id="control-area"></div>
     </div>
 
@@ -146,12 +144,12 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = 'TEST_USER';
-    let pose = null, mediaStream = null, tesseractWorker = null;
+    let pose = null, mediaStream = null;
     
     let currentHand = 'right'; // 'right' 或 'left'
     let currentAttempt = 1;    // 1, 2, 3
@@ -161,8 +159,11 @@
     
     let maxGripScore = 0.0;
     let latestOcrValue = 0.0;
-    let isOcrProcessing = false;
+    let isProcessing = false;
     let countdownTimer = null, testTimer = null;
+
+    // 存放 dict/0.png 到 dict/9.png 載入後的 ImageData
+    let digitTemplates = {};
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -173,9 +174,9 @@
         await initCameraDevices();
         
         initMediaPipePose();
-        await initTesseractOCR();
+        await loadDigitTemplates();
         
-        ocrLoop();
+        matchLoop();
     });
 
     function switchTab(tabName) {
@@ -220,25 +221,31 @@
 
     async function changeCamera() { await startWebcam(document.getElementById('camera-select').value); }
 
-    async function initTesseractWorker() {
-        if (tesseractWorker) return;
-        try {
-            tesseractWorker = await Tesseract.createWorker('eng');
-            await tesseractWorker.setParameters({ 
-                tessedit_char_whitelist: '0123456789.kgKG',
-                tessedit_pageseg_mode: '7' // 視為單行文字，大幅提升數字辨識率
+    // 🎯 載入 dict 資料夾內的 0-9 樣板圖片
+    async function loadDigitTemplates() {
+        document.getElementById('status-bar').innerText = "⏳ 正在載入 dict/ 0-9 樣板圖片...";
+        let loadedCount = 0;
+        for (let i = 0; i <= 9; i++) {
+            await new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = `dict/${i}.png`;
+                img.onload = () => {
+                    const c = document.createElement('canvas');
+                    c.width = 30; c.height = 50;
+                    const ctx = c.getContext('2d');
+                    ctx.drawImage(img, 0, 0, 30, 50);
+                    digitTemplates[i] = ctx.getImageData(0, 0, 30, 50);
+                    loadedCount++;
+                    resolve();
+                };
+                img.onerror = () => {
+                    console.warn(`無法載入 dict/${i}.png`);
+                    resolve();
+                };
             });
-        } catch (e) {
-            console.error("Tesseract 初始化失敗", e);
         }
-    }
-
-    async function initTesseractOCR() {
-        document.getElementById('status-bar').innerText = "⏳ 載入 AI 數值辨識引擎...";
-        await initTesseractWorker();
-        document.getElementById('status-bar').innerText = "✅ 系統就緒！點擊下方按鈕開始測驗";
-        
-        // 初始顯示「開始測驗」按鈕，讓使用者主導
+        document.getElementById('status-bar').innerText = `✅ 樣板載入完成 (${loadedCount}/10)！點擊按鈕開始測驗`;
         showStartButton("🚀 開始右手第 1 次測驗");
         speak("系統就緒，請準備進行右手測驗");
     }
@@ -270,13 +277,50 @@
         requestAnimationFrame(poseLoop);
     }
 
-    // 🎯 優化版 OCR：自動截取綠框區域、二值化並智慧解析數字與 kg
+    // 🎯 核心：樣板匹配運算 (Normalized Cross Correlation)
+    function computeNCC(d1, d2) {
+        let sum1 = 0, sum2 = 0, sumProd = 0, sumSq1 = 0, sumSq2 = 0;
+        const len = d1.length;
+        for (let i = 0; i < len; i += 4) {
+            let v1 = d1[i]; // 灰階值
+            let v2 = d2[i];
+            sum1 += v1; sum2 += v2;
+            sumProd += v1 * v2;
+            sumSq1 += v1 * v1; sumSq2 += v2 * v2;
+        }
+        const num = sumProd - (sum1 * sum2 / (len / 4));
+        const den = Math.sqrt((sumSq1 - (sum1 * sum1 / (len / 4))) * (sumSq2 - (sum2 * sum2 / (len / 4))));
+        if (den === 0) return 0;
+        return num / den;
+    }
+
+    function matchCell(cellCanvas) {
+        let bestDigit = 0;
+        let maxScore = -1;
+
+        const tempC = document.createElement('canvas');
+        tempC.width = 30; tempC.height = 50;
+        const tempCtx = tempC.getContext('2d');
+        tempCtx.drawImage(cellCanvas, 0, 0, 30, 50);
+        const cellData = tempCtx.getImageData(0, 0, 30, 50);
+
+        for (let d = 0; d <= 9; d++) {
+            if (!digitTemplates[d]) continue;
+            let score = computeNCC(cellData.data, digitTemplates[d].data);
+            if (score > maxScore) {
+                maxScore = score;
+                bestDigit = d;
+            }
+        }
+        return { digit: bestDigit, score: maxScore };
+    }
+
+    // 🎯 核心：擷取 ROI 畫面並進行等分切割與樣板匹配
     async function scanDeviceLCD(video) {
-        if (!video || video.readyState < 2 || !tesseractWorker) return 0;
+        if (!video || video.readyState < 2 || Object.keys(digitTemplates).length === 0) return 0;
         const sw = video.videoWidth || 640;
         const sh = video.videoHeight || 480;
         
-        // 框選 ROI 區域 (與畫面上 .roi-guide-box 相符)
         const sx = sw * 0.15;
         const sy = sh * 0.25;
         const sWidth = sw * 0.7;
@@ -291,69 +335,29 @@
         let bestVal = 0;
         let selectedCanvas = rawCanvas;
 
-        // 測試正常角度與 180 度倒拿角度
-        const angles = [0, 180];
+        // 格式固定為 4 等分：[十位], [個位], [小數點], [十分位]
+        const cols = 4;
+        const colW = sWidth / cols;
 
-        for (let angle of angles) {
-            const testCanvas = document.createElement('canvas');
-            testCanvas.width = sWidth;
-            testCanvas.height = sHeight;
-            const testCtx = testCanvas.getContext('2d');
+        const cellC = document.createElement('canvas');
+        cellC.width = colW;
+        cellC.height = sHeight;
+        const cellCtx = cellC.getContext('2d');
 
-            testCtx.save();
-            if (angle === 180) {
-                testCtx.translate(sWidth, sHeight);
-                testCtx.rotate(Math.PI);
-            }
-            testCtx.drawImage(rawCanvas, 0, 0);
-            testCtx.restore();
+        let tensMatch = matchCell(cutCell(rawCanvas, 0, colW, sHeight));
+        let unitsMatch = matchCell(cutCell(rawCanvas, colW, colW, sHeight));
+        let tenthsMatch = matchCell(cutCell(rawCanvas, colW * 3, colW, sHeight));
 
-            const previewCanvas = document.createElement('canvas');
-            previewCanvas.width = sWidth;
-            previewCanvas.height = sHeight;
-            const previewCtx = previewCanvas.getContext('2d');
-            previewCtx.drawImage(testCanvas, 0, 0);
+        let tens = tensMatch.digit;
+        let units = unitsMatch.digit;
+        let tenths = tenthsMatch.digit;
 
-            // 影像前處理：提高對比與二值化，幫助 OCR 讀取 LCD 數字
-            let imgData = previewCtx.getImageData(0, 0, sWidth, sHeight);
-            let data = imgData.data;
-            for (let i = 0; i < data.length; i += 4) {
-                let brightness = 0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
-                let color = brightness > 100 ? 255 : 0; 
-                data[i] = data[i+1] = data[i+2] = color;
-            }
-            previewCtx.putImageData(imgData, 0, 0);
+        // 計算數值 (支援 XX.X 或 X.X)
+        let parsedVal = (tens * 10) + units + (tenths * 0.1);
 
-            try {
-                const result = await tesseractWorker.recognize(previewCanvas);
-                let text = result.data.text.trim();
-                let cleanText = text.toLowerCase();
-
-                // 檢查是否包含 kg 或是純數字 (放寬限制，只要有數字就嘗試解析)
-                let hasKg = cleanText.includes('k') || cleanText.includes('g') || cleanText.includes('8') || cleanText.length > 0;
-                let cleanDigits = text.replace(/[^0-9]/g, '');
-
-                if (hasKg && cleanDigits.length >= 2) {
-                    let parsedVal = 0;
-                    // 位數智慧對應：例如 255 -> 25.5 kg, 45 -> 4.5 kg 等
-                    if (cleanDigits.length >= 3) {
-                        let d1 = parseInt(cleanDigits[0]);
-                        let d2 = parseInt(cleanDigits[1]);
-                        let d3 = parseInt(cleanDigits[2]);
-                        parsedVal = (d1 * 10) + d2 + (d3 * 0.1);
-                    } else if (cleanDigits.length === 2) {
-                        let d1 = parseInt(cleanDigits[0]);
-                        let d2 = parseInt(cleanDigits[1]);
-                        parsedVal = d1 + (d2 * 0.1);
-                    }
-
-                    if (parsedVal >= 0.5 && parsedVal <= 60.0) {
-                        bestVal = Math.round(parsedVal * 2) / 2; // 0.5 kg 結算
-                        selectedCanvas = previewCanvas;
-                        break;
-                    }
-                }
-            } catch (e) {}
+        if (parsedVal >= 0.5 && parsedVal <= 60.0) {
+            bestVal = Math.round(parsedVal * 2) / 2; // 0.5 kg 結算
+            selectedCanvas = rawCanvas;
         }
 
         // 更新除錯預覽小方格
@@ -366,20 +370,28 @@
         return bestVal;
     }
 
-    async function ocrLoop() {
-        if (!isOcrProcessing && (state === 'WAITING_FOR_TARGET' || state === 'TESTING')) {
+    function cutCell(sourceCanvas, x, w, h) {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(sourceCanvas, x, 0, w, h, 0, 0, w, h);
+        return c;
+    }
+
+    async function matchLoop() {
+        if (!isProcessing && (state === 'WAITING_FOR_TARGET' || state === 'TESTING')) {
             const video = document.getElementById('webcam');
             if (video && video.readyState >= 2) {
-                isOcrProcessing = true;
+                isProcessing = true;
                 let val = await scanDeviceLCD(video);
                 if (val > 0) {
                     latestOcrValue = val;
                     document.getElementById('current-grip-display').innerText = `${latestOcrValue} kg`;
                 }
-                isOcrProcessing = false;
+                isProcessing = false;
             }
         }
-        setTimeout(ocrLoop, 350);
+        setTimeout(matchLoop, 250);
     }
 
     // 🕹️ 控制按鈕介面生成
@@ -445,7 +457,6 @@
                     return;
                 }
 
-                // 記錄成績
                 if (currentHand === 'right') rightAttempts.push(maxGripScore);
                 else leftAttempts.push(maxGripScore);
 
@@ -466,7 +477,6 @@
             showStartButton(`▶️ 開始 ${handName}第 ${currentAttempt} 次測驗`);
         } else {
             if (currentHand === 'right') {
-                // 右手 3 次完成，切換到左手，但「必須停下來」等使用者點擊才開始左手
                 currentHand = 'left';
                 currentAttempt = 1;
                 state = 'WAITING_FOR_TARGET';
@@ -475,7 +485,6 @@
                 speak("右手測驗完畢，請換左手進行測驗");
                 showStartButton("🦾 開始左手第 1 次測驗");
             } else {
-                // 左右手全部完成！上傳雲端並停止，等待使用者重新測試
                 showFinalUploadAndStop();
             }
         }
@@ -499,7 +508,6 @@
             document.getElementById('status-bar').innerText = "⚠️ 雲端上傳失敗，請檢查資料表連線";
         }
 
-        // 停止並提供重新測驗按鈕
         const controlArea = document.getElementById('control-area');
         controlArea.innerHTML = `<button class="btn-secondary" onclick="fullReset()">🔄 重新開始全新測驗</button>`;
     }
