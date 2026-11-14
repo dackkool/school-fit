@@ -77,7 +77,7 @@
 
 <div id="main-card">
     <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">dict/ 樣板匹配・0.5kg 結算・完整測驗流程</div>
+    <div class="subtitle">dict/ 樣板匹配・二值化優化・0.5kg 結算</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
@@ -105,7 +105,7 @@
             <div class="roi-guide-box"><div class="roi-label">請將握力計螢幕置於此綠框內</div></div>
             
             <!-- 樣板匹配除錯預覽小方格 -->
-            <div class="debug-label">樣板匹配預覽</div>
+            <div class="debug-label">二值化匹配預覽</div>
             <canvas id="debug-canvas"></canvas>
         </div>
 
@@ -144,25 +144,25 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = 'TEST_USER';
     let pose = null, mediaStream = null;
     
-    let currentHand = 'right'; // 'right' 或 'left'
-    let currentAttempt = 1;    // 1, 2, 3
+    let currentHand = 'right';
+    let currentAttempt = 1;
     let rightAttempts = [];
     let leftAttempts = [];
-    let state = 'IDLE';        // IDLE, WAITING_FOR_TARGET, COUNTING_DOWN, TESTING, FINISHED
+    let state = 'IDLE';
     
     let maxGripScore = 0.0;
     let latestOcrValue = 0.0;
     let isProcessing = false;
     let countdownTimer = null, testTimer = null;
 
-    // 存放 dict/0.png 到 dict/9.png 載入後的 ImageData
+    // 存放 dict/0.png 到 dict/9.png 處理後的二值化 ImageData
     let digitTemplates = {};
 
     window.addEventListener('DOMContentLoaded', async () => {
@@ -221,7 +221,7 @@
 
     async function changeCamera() { await startWebcam(document.getElementById('camera-select').value); }
 
-    // 🎯 載入 dict 資料夾內的 0-9 樣板圖片
+    // 🎯 載入 dict 圖片並轉換為二值化標準樣板
     async function loadDigitTemplates() {
         document.getElementById('status-bar').innerText = "⏳ 正在載入 dict/ 0-9 樣板圖片...";
         let loadedCount = 0;
@@ -235,7 +235,17 @@
                     c.width = 30; c.height = 50;
                     const ctx = c.getContext('2d');
                     ctx.drawImage(img, 0, 0, 30, 50);
-                    digitTemplates[i] = ctx.getImageData(0, 0, 30, 50);
+                    
+                    // 轉為二值化 (白字黑底)
+                    let imgData = ctx.getImageData(0, 0, 30, 50);
+                    let data = imgData.data;
+                    for (let p = 0; p < data.length; p += 4) {
+                        let brightness = 0.3 * data[p] + 0.59 * data[p+1] + 0.11 * data[p+2];
+                        let val = brightness > 100 ? 255 : 0;
+                        data[p] = data[p+1] = data[p+2] = val;
+                    }
+                    ctx.putImageData(imgData, 0, 0);
+                    digitTemplates[i] = imgData;
                     loadedCount++;
                     resolve();
                 };
@@ -258,8 +268,9 @@
         pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.3, minTrackingConfidence: 0.3 });
         
         pose.onResults((results) => {
-            canvasElement.width = videoElement.videoWidth || 640;
-            canvasElement.height = videoElement.videoHeight || 480;
+            if (!videoElement.videoWidth) return;
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             if (results.poseLandmarks) {
@@ -277,12 +288,12 @@
         requestAnimationFrame(poseLoop);
     }
 
-    // 🎯 核心：樣板匹配運算 (Normalized Cross Correlation)
+    // 🎯 核心：二值化與 NCC 樣板匹配
     function computeNCC(d1, d2) {
         let sum1 = 0, sum2 = 0, sumProd = 0, sumSq1 = 0, sumSq2 = 0;
         const len = d1.length;
         for (let i = 0; i < len; i += 4) {
-            let v1 = d1[i]; // 灰階值
+            let v1 = d1[i];
             let v2 = d2[i];
             sum1 += v1; sum2 += v2;
             sumProd += v1 * v2;
@@ -302,6 +313,16 @@
         tempC.width = 30; tempC.height = 50;
         const tempCtx = tempC.getContext('2d');
         tempCtx.drawImage(cellCanvas, 0, 0, 30, 50);
+        
+        // 將截圖也轉為二值化
+        let imgData = tempCtx.getImageData(0, 0, 30, 50);
+        let data = imgData.data;
+        for (let p = 0; p < data.length; p += 4) {
+            let brightness = 0.3 * data[p] + 0.59 * data[p+1] + 0.11 * data[p+2];
+            let val = brightness > 100 ? 255 : 0;
+            data[p] = data[p+1] = data[p+2] = val;
+        }
+        tempCtx.putImageData(imgData, 0, 0);
         const cellData = tempCtx.getImageData(0, 0, 30, 50);
 
         for (let d = 0; d <= 9; d++) {
@@ -315,11 +336,10 @@
         return { digit: bestDigit, score: maxScore };
     }
 
-    // 🎯 核心：擷取 ROI 畫面並進行等分切割與樣板匹配
     async function scanDeviceLCD(video) {
-        if (!video || video.readyState < 2 || Object.keys(digitTemplates).length === 0) return 0;
-        const sw = video.videoWidth || 640;
-        const sh = video.videoHeight || 480;
+        if (!video || video.readyState < 2 || video.videoWidth === 0 || Object.keys(digitTemplates).length === 0) return 0;
+        const sw = video.videoWidth;
+        const sh = video.videoHeight;
         
         const sx = sw * 0.15;
         const sy = sh * 0.25;
@@ -335,14 +355,8 @@
         let bestVal = 0;
         let selectedCanvas = rawCanvas;
 
-        // 格式固定為 4 等分：[十位], [個位], [小數點], [十分位]
         const cols = 4;
         const colW = sWidth / cols;
-
-        const cellC = document.createElement('canvas');
-        cellC.width = colW;
-        cellC.height = sHeight;
-        const cellCtx = cellC.getContext('2d');
 
         let tensMatch = matchCell(cutCell(rawCanvas, 0, colW, sHeight));
         let unitsMatch = matchCell(cutCell(rawCanvas, colW, colW, sHeight));
@@ -352,11 +366,10 @@
         let units = unitsMatch.digit;
         let tenths = tenthsMatch.digit;
 
-        // 計算數值 (支援 XX.X 或 X.X)
         let parsedVal = (tens * 10) + units + (tenths * 0.1);
 
         if (parsedVal >= 0.5 && parsedVal <= 60.0) {
-            bestVal = Math.round(parsedVal * 2) / 2; // 0.5 kg 結算
+            bestVal = Math.round(parsedVal * 2) / 2;
             selectedCanvas = rawCanvas;
         }
 
@@ -381,7 +394,7 @@
     async function matchLoop() {
         if (!isProcessing && (state === 'WAITING_FOR_TARGET' || state === 'TESTING')) {
             const video = document.getElementById('webcam');
-            if (video && video.readyState >= 2) {
+            if (video && video.readyState >= 2 && video.videoWidth > 0) {
                 isProcessing = true;
                 let val = await scanDeviceLCD(video);
                 if (val > 0) {
@@ -394,7 +407,6 @@
         setTimeout(matchLoop, 250);
     }
 
-    // 🕹️ 控制按鈕介面生成
     function showStartButton(label) {
         const controlArea = document.getElementById('control-area');
         controlArea.innerHTML = `<button class="btn-primary" onclick="startCountdown()">${label}</button>`;
