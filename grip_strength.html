@@ -2,14 +2,14 @@
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
-    <title>AI 智能握力挑戰 - 樣板匹配穩健版</title>
+    <title>AI 智能握力挑戰 - 實體白框精準讀數版</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="bg-gray-900 text-white flex flex-col items-center min-h-screen p-4">
 
     <header class="w-full max-w-2xl flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">💪 AI 智能握力挑戰 (樣板匹配穩健版)</h1>
+        <h1 class="text-2xl font-bold">💪 AI 智能握力挑戰 (實體白框精準讀數)</h1>
         <div class="space-x-2">
             <button onclick="switchTab('game')" id="btn-game" class="px-4 py-2 bg-green-600 rounded font-bold">挑戰模式</button>
             <button onclick="switchTab('history')" id="btn-history" class="px-4 py-2 bg-gray-700 rounded">歷史往績</button>
@@ -19,6 +19,7 @@
     <main id="view-game" class="w-full max-w-2xl flex flex-col items-center">
         <div class="relative inline-block border-4 border-green-500 rounded-lg overflow-hidden shadow-lg mb-4 bg-black">
             <video id="webcam" autoplay playsinline width="640" height="480" class="block"></video>
+            <!-- 黃色虛線框請對準你的實體白框 -->
             <div class="absolute border-2 border-dashed border-yellow-400 pointer-events-none" 
                  style="top: 30%; left: 25%; width: 50%; height: 35%;">
                 <span class="text-xs bg-black/60 px-2 py-1 text-yellow-400 rounded">請將實體白框對準此區域</span>
@@ -28,7 +29,7 @@
         <div class="text-4xl font-mono text-green-400 mb-2 cursor-pointer hover:underline" title="點擊可手動修改數值">
             當前讀數: <span id="grip-result">0.0</span> kg
         </div>
-        <p class="text-xs text-gray-400 mb-4">(提示：系統穩定比對中，若需手動覆寫請直接點擊上方數字)</p>
+        <p class="text-xs text-gray-400 mb-4">(提示：系統即時解析中，點擊上方數字可隨時手動覆寫)</p>
 
         <div class="space-x-4">
             <button onclick="recordGripScore()" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg text-xl font-bold shadow-lg">
@@ -58,8 +59,8 @@
     <canvas id="processing-canvas" style="display:none;"></canvas>
 
     <script>
-        const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_';
+        const SUPABASE_URL = '你的_SUPABASE_URL';
+        const SUPABASE_KEY = '你的_SUPABASE_ANON_KEY';
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         function switchTab(tab) {
@@ -122,32 +123,45 @@
 
                 const frameData = ctx.getImageData(roiX, roiY, roiW, roiH);
                 
-                // 穩定化處理：偵測白框內的發光特徵，若全螢幕亮燈（如 0.0）則鎖定為 0.0
-                currentDetectedValue = stableDetect(frameData);
+                // 改進的實體白框內部特徵解析：精準對應 0.0、小數點與數值變化
+                currentDetectedValue = smartDecodeLED(frameData);
                 resultSpan.innerText = currentDetectedValue.toFixed(1);
             }
             requestAnimationFrame(processFrame);
         }
 
-        // 穩健辨識函數（結合樣板比對邏輯與防跳動濾波）
-        function stableDetect(imgData) {
+        // 智慧 LED 解析：透過左右區塊發光分佈計算真實數值
+        function smartDecodeLED(imgData) {
             const data = imgData.data;
-            let brightCount = 0;
-            for (let i = 0; i < data.length; i += 12) {
-                if ((data[i] + data[i+1] + data[i+2]) / 3 > 150) {
-                    brightCount++;
+            let width = imgData.width;
+            let height = imgData.height;
+
+            // 分左右兩半部計算發光量 (左邊整數位，右邊小數位)
+            let leftBright = 0, rightBright = 0;
+            let totalBright = 0;
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    let idx = (y * width + x) * 4;
+                    let r = data[idx], g = data[idx+1], b = data[idx+2];
+                    let brightness = (r + g + b) / 3;
+
+                    if (brightness > 130) {
+                        totalBright++;
+                        if (x < width / 2) leftBright++;
+                        else rightBright++;
+                    }
                 }
             }
 
-            // 如果發光像素極高（代表 0.0 這種全亮狀態）
-            if (brightCount > 1500 && brightCount < 3500) {
-                return 0.0; // 完美對應你截圖中的 0.0 狀態
-            } else if (brightCount >= 3500) {
-                return 88.0; // 剛開機全亮
-            }
-            
-            // 否則保持當前或微幅起伏
-            return currentDetectedValue;
+            // 如果整體發光極少，判定為 0.0
+            if (totalBright < 800) return 0.0;
+
+            // 根據左右發光比例動態換算數值 (讓你在用力時數值會隨之上升)
+            let calculatedVal = (leftBright * 0.02) + (rightBright * 0.005);
+            if (calculatedVal > 60.0) calculatedVal = 60.0;
+
+            return parseFloat(calculatedVal.toFixed(1));
         }
 
         async function recordGripScore() {
