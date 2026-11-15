@@ -37,10 +37,10 @@
 
         .roi-guide-box {
             position: absolute;
-            top: 25%;
-            left: 20%;
-            width: 70%;
-            height: 45%;
+            top: 20%;
+            left: 15%;
+            width: 75%;
+            height: 55%;
             border: 3px dashed #00e676;
             border-radius: 10px;
             pointer-events: none;
@@ -76,14 +76,13 @@
 
 <div id="main-card">
     <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">dict/ kg.png 錨點定位・精準樣板匹配・0.5kg 結算</div>
+    <div class="subtitle">dict/ kg.png 絕對錨點定位・精準樣板匹配</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
         <button class="tab-btn" onclick="switchTab('history')">📋 歷史成績</button>
     </div>
 
-    <!-- TAB 1: 測驗與辨識 -->
     <div id="tab-challenge" class="tab-content active">
         <div class="user-info-banner">
             <div>當前學生：<span id="current-user-label">載入中...</span></div>
@@ -126,7 +125,6 @@
         <div id="control-area"></div>
     </div>
 
-    <!-- TAB 2: 歷史記錄 -->
     <div id="tab-history" class="tab-content" style="display: none;">
         <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
             <span style="font-size: 0.85rem; color: #aaa; font-weight: bold;">歷史記錄：</span>
@@ -142,8 +140,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = 'TEST_USER';
@@ -223,7 +221,6 @@
         document.getElementById('status-bar').innerText = "⏳ 正在載入 dict/ 樣板圖片 (0-9 及 kg)...";
         let loadedCount = 0;
         
-        // 載入 0-9 數字樣板
         for (let i = 0; i <= 9; i++) {
             await new Promise((resolve) => {
                 const img = new Image();
@@ -244,7 +241,6 @@
             });
         }
 
-        // 載入 kg 標誌樣板
         await new Promise((resolve) => {
             const img = new Image();
             img.crossOrigin = "anonymous";
@@ -259,11 +255,11 @@
                 kgTemplate = imgData;
                 resolve();
             };
-            img.onerror = () => { console.warn("未找到 dict/kg.png，將使用預設右側定位"); resolve(); };
+            img.onerror = () => { console.warn("未找到 dict/kg.png"); resolve(); };
         });
 
         if (loadedCount === 0) {
-            document.getElementById('status-bar').innerText = "❌ 警告：無法載入 dict/ 圖片！請確認伺服器路徑。";
+            document.getElementById('status-bar').innerText = "❌ 警告：無法載入 dict/ 圖片！";
         } else {
             document.getElementById('status-bar').innerText = `✅ 樣板載入完成 (${loadedCount}/10 + kg)！點擊下方按鈕開始`;
             showStartButton("🚀 開始右手第 1 次測驗");
@@ -346,17 +342,17 @@
         return { digit: bestDigit, score: maxScore };
     }
 
-    // 🎯 核心升級：以 kg 為錨點，從右到左智慧切格辨識（解決 8.2 變 52 的問題）
+    // 🎯 核心：精準相對位移切割（以 kg 錨點為基準向左推算）
     async function scanDeviceLCD(video) {
         if (!video || video.readyState < 2 || video.videoWidth === 0 || Object.keys(digitTemplates).length === 0) return 0;
         const sw = video.videoWidth;
         const sh = video.videoHeight;
         
-        // 寬廣的 ROI 範圍確保把整個數字與 kg 包含進去
-        const sx = sw * 0.20;
-        const sy = sh * 0.25;
-        const sWidth = sw * 0.65;
-        const sHeight = sh * 0.45;
+        // 框出完整螢幕區域
+        const sx = sw * 0.15;
+        const sy = sh * 0.20;
+        const sWidth = sw * 0.70;
+        const sHeight = sh * 0.55;
 
         const rawCanvas = document.createElement('canvas');
         rawCanvas.width = sWidth;
@@ -364,18 +360,40 @@
         const rawCtx = rawCanvas.getContext('2d');
         rawCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
-        // 智慧切格：假設數位螢幕由右到左固定為 [十分位] [.小數點] [個位] [十位]
-        // 根據畫面比例精確劃分 4 個區塊
-        const cellW = sWidth / 5.2; // 每個字元大約佔寬度
-        const startX = sWidth - (cellW * 4.8);
+        // 如果有載入 kg.png，先用滑動視窗在 ROI 尋找 kg 的精確 X 座標
+        let kgX = sWidth * 0.85; // 預設值（靠右）
+        if (kgTemplate) {
+            let bestScore = -1;
+            let step = 4; // 步長，加快搜尋速度
+            for (let x = sWidth * 0.5; x < sWidth - 30; x += step) {
+                for (let y = sHeight * 0.4; y < sHeight - 30; y += step) {
+                    const subC = document.createElement('canvas');
+                    subC.width = 30; subC.height = 30;
+                    const subCtx = subC.getContext('2d');
+                    subCtx.drawImage(rawCanvas, x, y, 30, 30, 0, 0, 30, 30);
+                    let subData = subCtx.getImageData(0, 0, 30, 30);
+                    binarize(subData);
+                    let score = computeNCC(subData.data, kgTemplate.data);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        kgX = x;
+                    }
+                }
+            }
+        }
 
-        // 區塊從右到左：
-        // 1. 十分位 (最右邊的數字)
-        // 2. 個位
-        // 3. 十位 (最左邊)
-        let tenthsCanvas = cutCell(rawCanvas, sWidth - cellW * 1.2, cellW, sHeight);
-        let unitsCanvas = cutCell(rawCanvas, sWidth - cellW * 2.4, cellW, sHeight);
-        let tensCanvas = cutCell(rawCanvas, sWidth - cellW * 3.6, cellW, sHeight);
+        // 💡 關鍵：以 kg 的位置向左精準計算各個數位區塊寬度與間距
+        // 假設螢幕數位從右到左排列順序為：[十分位] -> [個位] -> [十位]
+        let digitW = sWidth * 0.14; // 數字寬度估算
+        let gap = sWidth * 0.03;    // 間距
+
+        let tenthsX = kgX - (digitW + gap);
+        let unitsX = tenthsX - (digitW + gap);
+        let tensX = unitsX - (digitW + gap);
+
+        let tenthsCanvas = cutCell(rawCanvas, tenthsX, digitW, sHeight * 0.7);
+        let unitsCanvas = cutCell(rawCanvas, unitsX, digitW, sHeight * 0.7);
+        let tensCanvas = cutCell(rawCanvas, tensX, digitW, sHeight * 0.7);
 
         let tenthsRes = recognizeDigit(tenthsCanvas);
         let unitsRes = recognizeDigit(unitsCanvas);
@@ -400,9 +418,9 @@
 
     function cutCell(sourceCanvas, x, w, h) {
         const c = document.createElement('canvas');
-        c.width = w; c.height = h;
+        c.width = Math.max(1, w); c.height = Math.max(1, h);
         const ctx = c.getContext('2d');
-        ctx.drawImage(sourceCanvas, x, 0, w, h, 0, 0, w, h);
+        ctx.drawImage(sourceCanvas, x, h * 0.15, w, h, 0, 0, w, h);
         return c;
     }
 
