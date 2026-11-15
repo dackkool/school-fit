@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI 左右手手握力測驗 (YOLOv8 深度除錯版)</title>
+  <title>AI 左右手手握力測驗 (精準座標對齊版)</title>
   <!-- ONNX Runtime Web -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
   <!-- MediaPipe Pose -->
@@ -154,14 +154,14 @@
   <canvas id="procCanvas" width="640" height="640" style="display:none;"></canvas>
 
   <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_';
+    const SUPABASE_URL = 'https://your-project.supabase.co';
+    const SUPABASE_ANON_KEY = 'your-anon-key';
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const MODEL_PATH = './models/best.onnx';
     const INPUT_SIZE = 640;
-    const CONF_THRESHOLD = 0.15; // 極低門檻以強制抓取所有數字
-    const IOU_THRESHOLD = 0.45;
+    const CONF_THRESHOLD = 0.25; // 提高一點信心度避免雜訊誤判
+    const IOU_THRESHOLD = 0.40;
     const ROI = { x: 0.22, y: 0.32, w: 0.56, h: 0.25 };
 
     let ortSession = null;
@@ -295,7 +295,7 @@
     }
 
     function parseYoloOutput(data, dims) {
-      const channels = dims[1]; // 總類別數 + 4
+      const channels = dims[1]; // 14 (4 + 10類數字)
       const numAnchors = dims[2]; // 8400
       const numClasses = channels - 4;
       const boxes = [];
@@ -307,7 +307,7 @@
           if (score > maxScore) { maxScore = score; classId = c; }
         }
 
-        // 排除非數字類別（若你的模型把 kg 當作第 10 類或大於 9，直接過濾掉）
+        // 嚴格過濾：只接受 0~9 的數字，排除 kg 圖標或其他干擾
         if (maxScore >= CONF_THRESHOLD && classId >= 0 && classId <= 9) {
           const cx = data[0 * numAnchors + i];
           const cy = data[1 * numAnchors + i];
@@ -359,37 +359,37 @@
         return;
       }
 
-      // 嚴格按 X 座標由左至右排序
-      detections.sort((a, b) => a.cx - b.cx);
-
+      // 【核心修復】精準對齊畫布上的綠框像素範圍，避免方框飄移
       const roiPxX = overlayCanvas.width * ROI.x;
       const roiPxY = overlayCanvas.height * ROI.y;
       const roiPxW = overlayCanvas.width * ROI.w;
       const roiPxH = overlayCanvas.height * ROI.h;
 
+      // 嚴格依 X 座標由左至右排序，確保讀數順序正確（例如先抓到 6，再抓到 2）
+      detections.sort((a, b) => a.cx - b.cx);
+
       let digitStr = '';
       detections.forEach(det => {
         digitStr += det.classId.toString();
 
-        // 座標還原到畫布上的綠框位置
         const bx = roiPxX + (det.x1 / INPUT_SIZE) * roiPxW;
         const by = roiPxY + (det.y1 / INPUT_SIZE) * roiPxH;
         const bw = ((det.x2 - det.x1) / INPUT_SIZE) * roiPxW;
         const bh = ((det.y2 - det.y1) / INPUT_SIZE) * roiPxH;
 
         overlayCtx.strokeStyle = '#10b981';
-        overlayCtx.lineWidth = 2;
+        overlayCtx.lineWidth = 2.5;
         overlayCtx.strokeRect(bx, by, bw, bh);
 
         overlayCtx.fillStyle = '#10b981';
-        overlayCtx.font = 'bold 12px sans-serif';
+        overlayCtx.font = 'bold 13px sans-serif';
         overlayCtx.fillText(`${det.classId} (${Math.round(det.score * 100)}%)`, bx, by - 4);
       });
 
-      // 解析數值 (例如 "7" 與 "6" 組合為 7.6)
-      if (digitStr.length >= 2) {
+      // 解析數值 (例如抓到 6 和 2 組合為 6.2)
+      if (digitStr.length >= 2 && digitStr.length <= 3) {
         const rawVal = parseInt(digitStr, 10) / 10.0;
-        const roundedKg = Math.round(rawVal * 2) / 2;
+        const roundedKg = Math.round(rawVal * 2) / 2; // 0.5kg 四捨五入
 
         if (roundedKg >= 0.5 && roundedKg <= 60.0) {
           stableBuffer.push(roundedKg);
@@ -442,7 +442,7 @@
     }
 
     async function saveToSupabase() {
-      const studentId = document.getElementById('studentId').value.trim() || 's001';
+      const studentId = document.getElementById('studentId'].value.trim() || 's001';
       const rBest = attempts.right.length ? Math.max(...attempts.right) : 0;
       const lBest = attempts.left.length ? Math.max(...attempts.left) : 0;
       const totalBest = Math.max(rBest, lBest);
