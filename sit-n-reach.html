@@ -319,8 +319,8 @@
     // --- 3. 檢查student_id 要跟login一樣 ---
     window.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
-        const urlStudentId = urlParams.get('student_id');
-        const localStudentId = localStorage.getItem('current_student_id');
+        const urlStudentId = urlParams.get('user_id');
+        const localStudentId = localStorage.getItem('current_user_id');
 
         // 安全檢查：如果網址上的學號跟 LocalStorage 登入的學號不符合，或者根本沒登入
         if (!localStudentId || (urlStudentId && urlStudentId !== localStudentId)) {
