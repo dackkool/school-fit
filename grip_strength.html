@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI 左右手手握力測驗 (Supabase + MediaPipe + YOLOv8)</title>
+  <title>AI 左右手手握力測驗 (YOLOv8 深度除錯版)</title>
   <!-- ONNX Runtime Web -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
   <!-- MediaPipe Pose -->
@@ -45,7 +45,6 @@
     video { width: 100%; height: 100%; object-fit: cover; display: block; }
     canvas#overlayCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
     
-    /* 精準對準 LED 螢幕的綠框 */
     .guide-box { position: absolute; top: 32%; left: 22%; width: 56%; height: 25%; border: 2px dashed var(--accent-green); border-radius: 10px; pointer-events: none; display: flex; justify-content: center; }
     .guide-label { background: var(--accent-green); color: #000; font-weight: 800; font-size: 0.75rem; padding: 2px 8px; border-radius: 0 0 8px 8px; height: fit-content; }
 
@@ -79,7 +78,7 @@
   <div class="app-container">
     <div class="header">
       <h1>AI 左右手手握力測驗</h1>
-      <p>MediaPipe 姿勢與 YOLOv8 螢幕數值智慧偵測</p>
+      <p>YOLOv8 智慧螢幕數值偵測</p>
     </div>
 
     <div class="tabs">
@@ -87,7 +86,6 @@
       <button class="tab-btn" onclick="switchTab('history')">📋 雲端歷史成績</button>
     </div>
 
-    <!-- 測驗分頁 -->
     <div id="testPanel" class="test-panel">
       <div class="student-bar">
         <div class="student-info">
@@ -129,14 +127,13 @@
         </div>
       </div>
 
-      <div id="statusBanner" class="status-banner">⏳ 正在初始化 AI 模型與 Supabase...</div>
+      <div id="statusBanner" class="status-banner">⏳ 正在載入模型...</div>
 
       <button id="recordBtn" class="primary-btn" onclick="recordAttempt()" disabled>
         💾 鎖定並同步儲存至雲端
       </button>
     </div>
 
-    <!-- 歷史成績分頁 -->
     <div id="historyPanel" class="history-panel">
       <table>
         <thead>
@@ -157,17 +154,15 @@
   <canvas id="procCanvas" width="640" height="640" style="display:none;"></canvas>
 
   <script>
-    // ================= 1. Supabase 設定 =================
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_';
+    const SUPABASE_URL = 'https://your-project.supabase.co';
+    const SUPABASE_ANON_KEY = 'your-anon-key';
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // ================= 2. 參數設定 =================
     const MODEL_PATH = './models/best.onnx';
     const INPUT_SIZE = 640;
-    const CONF_THRESHOLD = 0.20; // 降低門檻以確保靈敏抓取
+    const CONF_THRESHOLD = 0.15; // 極低門檻以強制抓取所有數字
     const IOU_THRESHOLD = 0.45;
-    const ROI = { x: 0.22, y: 0.32, w: 0.56, h: 0.25 }; // 精準對準 LED 螢幕
+    const ROI = { x: 0.22, y: 0.32, w: 0.56, h: 0.25 };
 
     let ortSession = null;
     let poseInstance = null;
@@ -194,44 +189,29 @@
       requestAnimationFrame(mainLoop);
     });
 
-    // 載入 YOLOv8 模型
     async function loadYoloModel() {
       const banner = document.getElementById('statusBanner');
       try {
         ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
         ortSession = await ort.InferenceSession.create(MODEL_PATH, { executionProviders: ['wasm'] });
-        banner.textContent = '✅ YOLOv8 與 Supabase 就緒！請將螢幕數字對準綠框';
+        banner.textContent = '✅ 模型就緒！請將數字對準綠框';
         banner.classList.add('ready');
       } catch (err) {
         console.error(err);
-        banner.innerHTML = `❌ 無法載入模型 ${MODEL_PATH}，請確認 Local Server`;
+        banner.innerHTML = `❌ 無法載入 ${MODEL_PATH}，請確認 Local Server`;
       }
     }
 
-    // 初始化 MediaPipe Pose 姿勢追蹤
     function initMediaPipePose() {
       poseInstance = new Pose({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
       });
-      poseInstance.setOptions({
-        modelComplexity: 1,
-        smoothLandmarks: true,
-        enableSegmentation: false,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
+      poseInstance.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+      poseInstance.onResults(results => {
+        if (!results.poseLandmarks) return;
+        const ls = results.poseLandmarks[11], rs = results.poseLandmarks[12];
+        poseStatusText = Math.abs(ls.y - rs.y) > 0.08 ? '⚠️ 請保持直立' : '姿勢標準 ✅';
       });
-      poseInstance.onResults(onPoseResults);
-    }
-
-    function onPoseResults(results) {
-      if (!results.poseLandmarks) return;
-      const leftShoulder = results.poseLandmarks[11];
-      const rightShoulder = results.poseLandmarks[12];
-      if (Math.abs(leftShoulder.y - rightShoulder.y) > 0.08) {
-        poseStatusText = '⚠️ 身體請保持直立';
-      } else {
-        poseStatusText = '姿勢標準 ✅';
-      }
     }
 
     async function initCameras() {
@@ -291,7 +271,7 @@
       }
 
       const sx = vw * ROI.x, sy = vh * ROI.y, sw = vw * ROI.w, sh = vh * ROI.h;
-      procCtx.fillStyle = '#1e1e1e';
+      procCtx.fillStyle = '#000000';
       procCtx.fillRect(0, 0, INPUT_SIZE, INPUT_SIZE);
       procCtx.drawImage(video, sx, sy, sw, sh, 0, 0, INPUT_SIZE, INPUT_SIZE);
 
@@ -315,27 +295,20 @@
     }
 
     function parseYoloOutput(data, dims) {
-      // dims 通常為 [1, 14, 8400]
-      const channels = dims[1]; // 14
+      const channels = dims[1]; // 總類別數 + 4
       const numAnchors = dims[2]; // 8400
-      const numClasses = channels - 4; // 10
+      const numClasses = channels - 4;
       const boxes = [];
 
-      // 走訪 8400 個候選框
       for (let i = 0; i < numAnchors; i++) {
-        let maxScore = 0;
-        let classId = -1;
-
-        // 找出 10 個數字類別中機率最高者
+        let maxScore = 0, classId = -1;
         for (let c = 0; c < numClasses; c++) {
           const score = data[(4 + c) * numAnchors + i];
-          if (score > maxScore) {
-            maxScore = score;
-            classId = c;
-          }
+          if (score > maxScore) { maxScore = score; classId = c; }
         }
 
-        if (maxScore >= CONF_THRESHOLD) {
+        // 排除非數字類別（若你的模型把 kg 當作第 10 類或大於 9，直接過濾掉）
+        if (maxScore >= CONF_THRESHOLD && classId >= 0 && classId <= 9) {
           const cx = data[0 * numAnchors + i];
           const cy = data[1 * numAnchors + i];
           const w = data[2 * numAnchors + i];
@@ -352,7 +325,6 @@
           });
         }
       }
-
       return nonMaxSuppression(boxes, IOU_THRESHOLD);
     }
 
@@ -382,18 +354,24 @@
 
       if (detections.length === 0) {
         stableBuffer = [];
-        banner.innerHTML = `⚠️ ${poseStatusText} | 未偵測到數值`;
+        banner.innerHTML = `⚠️ ${poseStatusText} | 未偵測到有效數字`;
         banner.classList.remove('ready');
         return;
       }
 
+      // 嚴格按 X 座標由左至右排序
       detections.sort((a, b) => a.cx - b.cx);
-      const roiPxX = overlayCanvas.width * ROI.x, roiPxY = overlayCanvas.height * ROI.y;
-      const roiPxW = overlayCanvas.width * ROI.w, roiPxH = overlayCanvas.height * ROI.h;
+
+      const roiPxX = overlayCanvas.width * ROI.x;
+      const roiPxY = overlayCanvas.height * ROI.y;
+      const roiPxW = overlayCanvas.width * ROI.w;
+      const roiPxH = overlayCanvas.height * ROI.h;
 
       let digitStr = '';
       detections.forEach(det => {
         digitStr += det.classId.toString();
+
+        // 座標還原到畫布上的綠框位置
         const bx = roiPxX + (det.x1 / INPUT_SIZE) * roiPxW;
         const by = roiPxY + (det.y1 / INPUT_SIZE) * roiPxH;
         const bw = ((det.x2 - det.x1) / INPUT_SIZE) * roiPxW;
@@ -402,11 +380,16 @@
         overlayCtx.strokeStyle = '#10b981';
         overlayCtx.lineWidth = 2;
         overlayCtx.strokeRect(bx, by, bw, bh);
+
+        overlayCtx.fillStyle = '#10b981';
+        overlayCtx.font = 'bold 12px sans-serif';
+        overlayCtx.fillText(`${det.classId} (${Math.round(det.score * 100)}%)`, bx, by - 4);
       });
 
-      if (digitStr.length >= 2 && digitStr.length <= 3) {
+      // 解析數值 (例如 "7" 與 "6" 組合為 7.6)
+      if (digitStr.length >= 2) {
         const rawVal = parseInt(digitStr, 10) / 10.0;
-        const roundedKg = Math.round(rawVal * 2) / 2; // 0.5kg 四捨五入
+        const roundedKg = Math.round(rawVal * 2) / 2;
 
         if (roundedKg >= 0.5 && roundedKg <= 60.0) {
           stableBuffer.push(roundedKg);
@@ -485,10 +468,7 @@
           .order('created_at', { ascending: false })
           .limit(20);
 
-        if (error) {
-          console.error(error);
-          return;
-        }
+        if (error) return;
 
         const tbody = document.getElementById('historyTableBody');
         tbody.innerHTML = (data || []).map(row => `
@@ -500,9 +480,7 @@
             <td>${new Date(row.created_at).toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' })}</td>
           </tr>
         `).join('');
-      } catch (e) {
-        console.error('無法取得歷史資料');
-      }
+      } catch (e) {}
     }
 
     function resetCurrentStudent() {
