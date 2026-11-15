@@ -45,7 +45,8 @@
     video { width: 100%; height: 100%; object-fit: cover; display: block; }
     canvas#overlayCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
     
-    .guide-box { position: absolute; top: 18%; left: 16%; width: 68%; height: 64%; border: 2px dashed var(--accent-green); border-radius: 12px; pointer-events: none; display: flex; justify-content: center; }
+    /* 精準對準 LED 螢幕的綠框 */
+    .guide-box { position: absolute; top: 32%; left: 22%; width: 56%; height: 25%; border: 2px dashed var(--accent-green); border-radius: 10px; pointer-events: none; display: flex; justify-content: center; }
     .guide-label { background: var(--accent-green); color: #000; font-weight: 800; font-size: 0.75rem; padding: 2px 8px; border-radius: 0 0 8px 8px; height: fit-content; }
 
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -156,18 +157,17 @@
   <canvas id="procCanvas" width="640" height="640" style="display:none;"></canvas>
 
   <script>
-    // ================= 1. Supabase 設定 (請替換為你的金鑰) =================
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_';
+    // ================= 1. Supabase 設定 =================
+    const SUPABASE_URL = 'https://your-project.supabase.co';
+    const SUPABASE_ANON_KEY = 'your-anon-key';
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // ================= 2. 參數設定 =================
     const MODEL_PATH = './models/best.onnx';
     const INPUT_SIZE = 640;
-    const CONF_THRESHOLD = 0.30;
+    const CONF_THRESHOLD = 0.20; // 降低門檻以確保靈敏抓取
     const IOU_THRESHOLD = 0.45;
-    // 調整後的 ROI：將 y 往上移（變小），h 縮小以剛好框住螢幕
-    const ROI = { x: 0.22, y: 0.32, w: 0.56, h: 0.25 };
+    const ROI = { x: 0.22, y: 0.32, w: 0.56, h: 0.25 }; // 精準對準 LED 螢幕
 
     let ortSession = null;
     let poseInstance = null;
@@ -178,7 +178,7 @@
     
     let stableBuffer = [];
     let latestValidKg = null;
-    let poseStatusText = '姿勢正常';
+    let poseStatusText = '姿勢標準';
 
     const video = document.getElementById('video');
     const overlayCanvas = document.getElementById('overlayCanvas');
@@ -225,11 +225,10 @@
 
     function onPoseResults(results) {
       if (!results.poseLandmarks) return;
-      // 簡單範例：檢查肩膀是否平衡或身體是否穩定
       const leftShoulder = results.poseLandmarks[11];
       const rightShoulder = results.poseLandmarks[12];
       if (Math.abs(leftShoulder.y - rightShoulder.y) > 0.08) {
-        poseStatusText = '⚠️ 身體請保持直立平衡';
+        poseStatusText = '⚠️ 身體請保持直立';
       } else {
         poseStatusText = '姿勢標準 ✅';
       }
@@ -267,14 +266,11 @@
       };
     }
 
-    // 主循環：結合 MediaPipe Pose 與 YOLOv8 推論
     async function mainLoop() {
       if (!isProcessing && video.readyState >= 2) {
         isProcessing = true;
         try {
-          // 1. 執行 MediaPipe 姿勢追蹤
           await poseInstance.send({ image: video });
-          // 2. 執行 YOLOv8 數字辨識
           if (ortSession) await runYoloDetection();
         } catch (e) {
           console.error(e);
@@ -428,7 +424,6 @@
       document.getElementById('recordBtn').disabled = list.length >= 3 || latestValidKg === null;
     }
 
-    // ================= 3. Supabase 資料同步與互動 =================
     async function recordAttempt() {
       if (latestValidKg === null || attempts[currentHand].length >= 3) return;
       attempts[currentHand].push(latestValidKg);
@@ -449,7 +444,7 @@
 
       try {
         const { error } = await supabaseClient
-          .from('grip_records') // 請確保你的 Supabase 有建立此 table
+          .from('grip_records')
           .insert([{ student_id: studentId, r_best: rBest, l_best: lBest, total_best: totalBest, created_at: new Date() }]);
 
         if (error) console.error('Supabase 寫入錯誤:', error);
