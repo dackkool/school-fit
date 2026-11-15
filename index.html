@@ -789,7 +789,7 @@
     }
 
     function saveSession(id, name, role, grade, className, gender) {
-        sessionStorage.setItem('current_user_id', id);
+        sessionStorage.setItem('current_user_id', studentId);
         sessionStorage.setItem('current_user_name', name);
         sessionStorage.setItem('current_user_role', role);
         sessionStorage.setItem('current_user_grade', grade || '');
