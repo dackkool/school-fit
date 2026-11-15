@@ -423,7 +423,7 @@
     // --- 2. 檢查 student_id 要跟 login 一樣 ---
     window.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
-        const urlStudentId = urlParams.get('student_id');
+        const urlStudentId = urlParams.get('user_id');
         const localStudentId = sessionStorage.getItem('current_student_id');
 
         if (!localStudentId || (urlStudentId && urlStudentId !== localStudentId)) {
