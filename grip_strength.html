@@ -37,10 +37,10 @@
 
         .roi-guide-box {
             position: absolute;
-            top: 20%;
-            left: 15%;
-            width: 75%;
-            height: 55%;
+            top: 22%;
+            left: 25%;
+            width: 55%;
+            height: 50%;
             border: 3px dashed #00e676;
             border-radius: 10px;
             pointer-events: none;
@@ -76,7 +76,7 @@
 
 <div id="main-card">
     <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">dict/ kg.png 絕對錨點定位・精準樣板匹配</div>
+    <div class="subtitle">精準等分樣板匹配・0.5kg 結算</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
@@ -100,9 +100,9 @@
             <video id="webcam" autoplay muted playsinline></video>
             <canvas id="output-canvas"></canvas>
             
-            <div class="roi-guide-box"><div class="roi-label">請將螢幕對準此綠框內</div></div>
+            <div class="roi-guide-box"><div class="roi-label">請將螢幕數字對準此綠框內</div></div>
             
-            <div class="debug-label">錨點辨識預覽</div>
+            <div class="debug-label">辨識預覽</div>
             <canvas id="debug-canvas"></canvas>
         </div>
 
@@ -121,7 +121,7 @@
             </div>
         </div>
 
-        <div id="status-bar">⏳ 正在載入 dict/ 樣板圖片 (0-9 及 kg)...</div>
+        <div id="status-bar">⏳ 正在載入 dict/ 樣板圖片 (0-9)...</div>
         <div id="control-area"></div>
     </div>
 
@@ -140,8 +140,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = 'TEST_USER';
@@ -159,7 +159,6 @@
     let countdownTimer = null, testTimer = null;
 
     let digitTemplates = {};
-    let kgTemplate = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -218,7 +217,7 @@
     async function changeCamera() { await startWebcam(document.getElementById('camera-select').value); }
 
     async function loadTemplates() {
-        document.getElementById('status-bar').innerText = "⏳ 正在載入 dict/ 樣板圖片 (0-9 及 kg)...";
+        document.getElementById('status-bar').innerText = "⏳ 正在載入 dict/ 樣板圖片 (0-9)...";
         let loadedCount = 0;
         
         for (let i = 0; i <= 9; i++) {
@@ -241,27 +240,10 @@
             });
         }
 
-        await new Promise((resolve) => {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = `dict/kg.png`;
-            img.onload = () => {
-                const c = document.createElement('canvas');
-                c.width = 30; c.height = 30;
-                const ctx = c.getContext('2d');
-                ctx.drawImage(img, 0, 0, 30, 30);
-                let imgData = ctx.getImageData(0, 0, 30, 30);
-                binarize(imgData);
-                kgTemplate = imgData;
-                resolve();
-            };
-            img.onerror = () => { console.warn("未找到 dict/kg.png"); resolve(); };
-        });
-
         if (loadedCount === 0) {
             document.getElementById('status-bar').innerText = "❌ 警告：無法載入 dict/ 圖片！";
         } else {
-            document.getElementById('status-bar').innerText = `✅ 樣板載入完成 (${loadedCount}/10 + kg)！點擊下方按鈕開始`;
+            document.getElementById('status-bar').innerText = `✅ 樣板載入完成 (${loadedCount}/10)！點擊下方按鈕開始`;
             showStartButton("🚀 開始右手第 1 次測驗");
             speak("系統就緒，請準備進行右手測驗");
         }
@@ -342,17 +324,17 @@
         return { digit: bestDigit, score: maxScore };
     }
 
-    // 🎯 核心：精準相對位移切割（以 kg 錨點為基準向左推算）
+    // 🎯 核心修正：精準 3 等分掃描（適用於標準 LED 螢幕 [十位][個位].[十分位]）
     async function scanDeviceLCD(video) {
         if (!video || video.readyState < 2 || video.videoWidth === 0 || Object.keys(digitTemplates).length === 0) return 0;
         const sw = video.videoWidth;
         const sh = video.videoHeight;
         
-        // 框出完整螢幕區域
-        const sx = sw * 0.15;
-        const sy = sh * 0.20;
-        const sWidth = sw * 0.70;
-        const sHeight = sh * 0.55;
+        // 嚴格對應綠框範圍 (ROI)
+        const sx = sw * 0.28;
+        const sy = sh * 0.25;
+        const sWidth = sw * 0.44;
+        const sHeight = sh * 0.45;
 
         const rawCanvas = document.createElement('canvas');
         rawCanvas.width = sWidth;
@@ -360,45 +342,21 @@
         const rawCtx = rawCanvas.getContext('2d');
         rawCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
-        // 如果有載入 kg.png，先用滑動視窗在 ROI 尋找 kg 的精確 X 座標
-        let kgX = sWidth * 0.85; // 預設值（靠右）
-        if (kgTemplate) {
-            let bestScore = -1;
-            let step = 4; // 步長，加快搜尋速度
-            for (let x = sWidth * 0.5; x < sWidth - 30; x += step) {
-                for (let y = sHeight * 0.4; y < sHeight - 30; y += step) {
-                    const subC = document.createElement('canvas');
-                    subC.width = 30; subC.height = 30;
-                    const subCtx = subC.getContext('2d');
-                    subCtx.drawImage(rawCanvas, x, y, 30, 30, 0, 0, 30, 30);
-                    let subData = subCtx.getImageData(0, 0, 30, 30);
-                    binarize(subData);
-                    let score = computeNCC(subData.data, kgTemplate.data);
-                    if (score > bestScore) {
-                        bestScore = score;
-                        kgX = x;
-                    }
-                }
-            }
-        }
+        // 將 ROI 均勻切成 3 個區塊：左(十位)、中(個位)、右(十分位)
+        const colW = sWidth / 3.0;
 
-        // 💡 關鍵：以 kg 的位置向左精準計算各個數位區塊寬度與間距
-        // 假設螢幕數位從右到左排列順序為：[十分位] -> [個位] -> [十位]
-        let digitW = sWidth * 0.14; // 數字寬度估算
-        let gap = sWidth * 0.03;    // 間距
+        let tensCanvas = cutCell(rawCanvas, 0, colW, sHeight);
+        let unitsCanvas = cutCell(rawCanvas, colW, colW, sHeight);
+        let tenthsCanvas = cutCell(rawCanvas, colW * 2, colW, sHeight);
 
-        let tenthsX = kgX - (digitW + gap);
-        let unitsX = tenthsX - (digitW + gap);
-        let tensX = unitsX - (digitW + gap);
-
-        let tenthsCanvas = cutCell(rawCanvas, tenthsX, digitW, sHeight * 0.7);
-        let unitsCanvas = cutCell(rawCanvas, unitsX, digitW, sHeight * 0.7);
-        let tensCanvas = cutCell(rawCanvas, tensX, digitW, sHeight * 0.7);
-
-        let tenthsRes = recognizeDigit(tenthsCanvas);
-        let unitsRes = recognizeDigit(unitsCanvas);
         let tensRes = recognizeDigit(tensCanvas);
+        let unitsRes = recognizeDigit(unitsCanvas);
+        let tenthsRes = recognizeDigit(tenthsCanvas);
 
+        // 即時在 Console 顯示每一格辨識結果，方便排查
+        console.log(`辨識結果 -> 十位: ${tensRes.digit}, 個位: ${unitsRes.digit}, 十分位: ${tenthsRes.digit}`);
+
+        // 計算總數值
         let parsedVal = (tensRes.digit * 10) + unitsRes.digit + (tenthsRes.digit * 0.1);
 
         let bestVal = 0;
@@ -418,9 +376,9 @@
 
     function cutCell(sourceCanvas, x, w, h) {
         const c = document.createElement('canvas');
-        c.width = Math.max(1, w); c.height = Math.max(1, h);
+        c.width = 30; c.height = 50;
         const ctx = c.getContext('2d');
-        ctx.drawImage(sourceCanvas, x, h * 0.15, w, h, 0, 0, w, h);
+        ctx.drawImage(sourceCanvas, x, 0, w, h, 0, 0, 30, 50);
         return c;
     }
 
@@ -437,7 +395,7 @@
                 isProcessing = false;
             }
         }
-        setTimeout(matchLoop, 250);
+        setTimeout(matchLoop, 300);
     }
 
     function showStartButton(label) {
