@@ -1,253 +1,210 @@
 <!DOCTYPE html>
 <html lang="zh-HK">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AI 手握力 - 10 Class 版</title>
-<link rel="icon" href="data:,">
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<style>
-:root{--bg-dark:#141517;--card-bg:#1e2024;--border-color:#2e3238;--accent-orange:#f59e0b;--accent-green:#10b981;--text-main:#f3f4f6;--text-muted:#9ca3af}
-*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-body{background-color:var(--bg-dark);color:var(--text-main);display:flex;justify-content:center;padding:16px;min-height:100vh}
-.app-container{width:100%;max-width:520px;display:flex;flex-direction:column;gap:14px}
-.header{text-align:center;padding:8px 0}.header h1{color:var(--accent-orange);font-size:1.4rem;font-weight:800}.header p{color:var(--text-muted);font-size:0.75rem;margin-top:2px}
-.tabs{display:flex;border-bottom:1px solid var(--border-color)}.tab-btn{flex:1;background:none;border:none;color:var(--text-muted);padding:10px;font-size:0.95rem;font-weight:700;cursor:pointer;border-bottom:3px solid transparent}.tab-btn.active{color:var(--accent-orange);border-bottom-color:var(--accent-orange)}
-.video-wrap{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:12px;overflow:hidden;border:2px solid var(--accent-orange)}
-#video{width:100%;height:100%;object-fit:cover;transform:none} #overlayCanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.roi-box{position:absolute;border:2px dashed #10b981;background:rgba(16,185,129,0.12);pointer-events:none;display:flex;align-items:flex-start;justify-content:center}
-.roi-label{font-size:10px;background:#10b981;color:#000;padding:2px 6px;border-radius:0 0 6px 6px;font-weight:800}
-.stat-row{display:flex;gap:8px}.stat-card{flex:1;background:var(--card-bg);border:1px solid var(--border-color);padding:10px;border-radius:10px;text-align:center}
-.stat-title{font-size:11px;color:var(--text-muted)}.stat-val{font-size:1.1rem;font-weight:800;margin-top:4px}.stat-val.green{color:var(--accent-green)}.stat-val.orange{color:var(--accent-orange)}
-.status-banner{background:#1a3a2a;border:1px solid #10b981;color:#10b981;padding:10px;border-radius:10px;text-align:center;font-weight:700;font-size:0.9rem;line-height:1.4}.status-banner.ready{background:#0f3a1a}
-.primary-btn{width:100%;background:linear-gradient(135deg,#f59e0b,#ef4444);border:none;color:#fff;padding:14px;border-radius:12px;font-weight:800;font-size:1rem;cursor:pointer}.primary-btn:disabled{opacity:0.4}
-.btn-sm{padding:6px 10px;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-main);cursor:pointer}
-.history-panel{display:none}.history-panel.active{display:block;background:var(--card-bg);border-radius:12px;padding:10px} table{width:100%;border-collapse:collapse;font-size:12px} th,td{padding:6px;border-bottom:1px solid var(--border-color);text-align:center}
-.hand-switch{display:flex;gap:8px}.hand-btn{flex:1;padding:10px;border-radius:10px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-muted);font-weight:700}.hand-btn.active{border-color:var(--accent-green);color:var(--accent-green)}
-.hidden{display:none}
-</style>
+    <meta charset="UTF-8">
+    <title>AI 智能握力挑戰與歷史紀錄</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <!-- 引入 Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body>
-<div class="app-container">
-  <div class="header"><h1>AI 左右手手握力測驗</h1><p>10 Class (0-9) Fix 版 - GitHub Pages 直接用</p></div>
-  <div class="tabs"><button class="tab-btn active" onclick="switchTab('test')">🤜 手握力測驗</button><button class="tab-btn" onclick="switchTab('history')">📋 雲端歷史</button></div>
-  <div id="testPanel">
-    <div style="display:flex;gap:8px"><input id="studentId" value="s001" style="flex:1;background:#111;color:#f59e0b;border:1px solid #333;border-radius:8px;padding:8px;font-weight:700"><button class="btn-sm" onclick="resetCurrentStudent()">重置</button></div>
-    <select id="cameraSelect" style="width:100%;background:var(--card-bg);color:#fff;border:1px solid var(--border-color);padding:8px;border-radius:8px"></select>
-    <div class="video-wrap" id="videoWrap"><video id="video" autoplay playsinline muted></video><canvas id="overlayCanvas"></canvas><div class="roi-box" id="roiBox"><span class="roi-label">請將下面大數字對準此框 - 例如 8.2</span></div></div>
-    <div class="hand-switch"><button id="btnRight" class="hand-btn active" onclick="selectHand('right')">右手 (<span id="rightCount">0</span>/3)</button><button id="btnLeft" class="hand-btn" onclick="selectHand('left')">左手 (<span id="leftCount">0</span>/3)</button></div>
-    <div class="stat-row"><div class="stat-card"><div class="stat-title">當前</div><div id="currentHandLabel" class="stat-val green">右手 (第1次)</div></div><div class="stat-card"><div class="stat-title">即時</div><div id="liveReading" class="stat-val orange">0.0 kg</div></div><div class="stat-card"><div class="stat-title">最佳</div><div id="bestReading" class="stat-val orange">0.0 kg</div></div></div>
-    <div id="statusBanner" class="status-banner">⏳ 正在載入 ./models/best.onnx ...</div>
-    <button id="recordBtn" class="primary-btn" onclick="recordAttempt()" disabled>💾 鎖定儲存</button>
-  </div>
-  <div id="historyPanel" class="history-panel"><table><thead><tr><th>學生</th><th>右手</th><th>左手</th><th>總最佳</th><th>時間</th></tr></thead><tbody id="historyTableBody"></tbody></table><button class="btn-sm" onclick="fetchSupabaseHistory()">🔄 重新整理</button></div>
-</div>
-<canvas id="procCanvas" width="640" height="640" style="display:none"></canvas>
-<script>
-// ===== GitHub Pages 用家注意：如果你暫時唔用 Supabase，將下面兩行留空，個掣就會變本地模式 =====
-const SUPABASE_URL='https://yenaiiwhfqgksuofnrjn.supabase.co';
-const SUPABASE_ANON_KEY='sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_';
-const supabaseClient = (SUPABASE_URL.includes('your-project')) ? null : supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+<body class="bg-gray-900 text-white flex flex-col items-center min-h-screen p-4">
 
-const MODEL_PATH='./models/best.onnx';
-const INPUT_SIZE=640;
-const IOU_THRESHOLD=0.45;
-const CONF_THRESHOLD=0.15; // 0.25太高，你張圖藍字太淡
-const ROI={x:0.28, y:0.38, w:0.50, h:0.30}; // 放大咗，唔使對到咁辛苦
+    <!-- 頂部標題與功能切換 -->
+    <header class="w-full max-w-2xl flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">💪 AI 智能握力挑戰 (實體白框版)</h1>
+        <div class="space-x-2">
+            <button onclick="switchTab('game')" id="btn-game" class="px-4 py-2 bg-green-600 rounded font-bold">挑戰模式</button>
+            <button onclick="switchTab('history')" id="btn-history" class="px-4 py-2 bg-gray-700 rounded">歷史往績</button>
+        </div>
+    </header>
 
-let ortSession=null, poseInstance=null, isProcessing=false, currentStream=null;
-let currentHand='right', attempts={right:[],left:[]}, stableBuffer=[], latestValidKg=null, poseStatusText='姿勢標準';
+    <!-- 挑戰主畫面 -->
+    <main id="view-game" class="w-full max-w-2xl flex flex-col items-center">
+        <div class="relative inline-block border-4 border-green-500 rounded-lg overflow-hidden shadow-lg mb-4 bg-black">
+            <!-- 即時視訊串流 -->
+            <video id="webcam" autoplay playsinline width="640" height="480" class="block"></video>
+            <!-- 視覺引導框 -->
+            <div class="absolute border-2 border-dashed border-white/55 pointer-events-none inset-12 flex items-center justify-center">
+                <span class="text-xs bg-black/60 px-2 py-1 text-white rounded">請將白色貼紙框對準此區域</span>
+            </div>
+        </div>
 
-const video=document.getElementById('video');
-const overlayCanvas=document.getElementById('overlayCanvas');
-const overlayCtx=overlayCanvas.getContext('2d');
-const procCanvas=document.getElementById('procCanvas');
-const procCtx=procCanvas.getContext('2d',{willReadFrequently:true});
-const roiBox=document.getElementById('roiBox');
-function layoutROI(){ roiBox.style.left=(ROI.x*100)+'%'; roiBox.style.top=(ROI.y*100)+'%'; roiBox.style.width=(ROI.w*100)+'%'; roiBox.style.height=(ROI.h*100)+'%'; }
-layoutROI();
+        <!-- 即時讀數顯示 -->
+        <div class="text-4xl font-mono text-green-400 mb-4">
+            當前讀數: <span id="grip-result">0.0</span> kg
+        </div>
 
-window.addEventListener('DOMContentLoaded', async()=>{
-  await initCameras(); await loadYoloModel(); initMediaPipePose();
-  if(supabaseClient) fetchSupabaseHistory();
-  requestAnimationFrame(mainLoop);
-});
+        <!-- 操作按鈕 -->
+        <div class="space-x-4">
+            <button onclick="recordGripScore()" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg text-xl font-bold shadow-lg">
+                紀錄本次成績並上傳雲端
+            </button>
+        </div>
+    </main>
 
-async function loadYoloModel(){
-  const banner=document.getElementById('statusBanner');
-  try{
-    ort.env.wasm.wasmPaths='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
-    ort.env.wasm.numThreads=1; ort.env.wasm.simd=true;
-    ortSession=await ort.InferenceSession.create(MODEL_PATH,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
-    banner.textContent='✅ 模型就緒！請將 8.2 對準綠框正中';
-    banner.classList.add('ready');
-    console.log('Model OK', ortSession.inputNames, ortSession.outputNames);
-  }catch(err){
-    banner.innerHTML=`❌ 載入失敗 ${MODEL_PATH}<br>${err.message}<br>去 https://你的帳號.github.io/你的repo/models/best.onnx 睇下係咪404`;
-    console.error(err);
-  }
-}
-function initMediaPipePose(){
-  poseInstance=new Pose({locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${f}`});
-  poseInstance.setOptions({modelComplexity:1,smoothLandmarks:true,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
-  poseInstance.onResults(r=>{
-    if(!r.poseLandmarks) return;
-    const ls=r.poseLandmarks[11], rs=r.poseLandmarks[12];
-    poseStatusText = Math.abs(ls.y-rs.y)>0.08 ? '⚠️ 請保持直立' : '姿勢標準 ✅';
-  });
-}
-async function initCameras(){
-  const select=document.getElementById('cameraSelect');
-  try{
-    await navigator.mediaDevices.getUserMedia({video:true});
-    const devices=await navigator.mediaDevices.enumerateDevices();
-    const vDevs=devices.filter(d=>d.kind==='videoinput');
-    select.innerHTML=''; vDevs.forEach((d,i)=>{const o=document.createElement('option'); o.value=d.deviceId; o.text=d.label||`相機 ${i+1}`; select.appendChild(o);});
-    select.onchange=()=>startCamera(select.value);
-    if(vDevs.length>0) startCamera(vDevs[0].deviceId);
-  }catch(e){document.getElementById('statusBanner').textContent='❌ 無法存取攝影機 - 請用 https 開 GitHub Pages';}
-}
-async function startCamera(deviceId){
-  if(currentStream) currentStream.getTracks().forEach(t=>t.stop());
-  currentStream=await navigator.mediaDevices.getUserMedia({video:{deviceId:deviceId?{exact:deviceId}:undefined,width:{ideal:1280},height:{ideal:720}}});
-  video.srcObject=currentStream;
-  video.onloadedmetadata=()=>{overlayCanvas.width=video.clientWidth; overlayCanvas.height=video.clientHeight;};
-}
-async function mainLoop(){
-  if(!isProcessing && video.readyState>=2){
-    isProcessing=true;
-    try{ await poseInstance.send({image:video}); if(ortSession) await runYoloDetection(); }catch(e){console.error(e);}
-    isProcessing=false;
-  }
-  requestAnimationFrame(mainLoop);
-}
-async function runYoloDetection(){
-  const vw=video.videoWidth, vh=video.videoHeight; if(!vw) return;
-  if(overlayCanvas.width!==video.clientWidth){ overlayCanvas.width=video.clientWidth; overlayCanvas.height=video.clientHeight; }
-  const sx=vw*ROI.x, sy=vh*ROI.y, sw=vw*ROI.w, sh=vh*ROI.h;
-  const scale=Math.min(INPUT_SIZE/sw, INPUT_SIZE/sh);
-  const nw=sw*scale, nh=sh*scale, dx=(INPUT_SIZE-nw)/2, dy=(INPUT_SIZE-nh)/2;
-  procCtx.fillStyle='#000'; procCtx.fillRect(0,0,INPUT_SIZE,INPUT_SIZE);
-  procCtx.drawImage(video, sx,sy,sw,sh, dx,dy,nw,nh);
-  window._lb={dx,dy,scale,sw,sh};
-  const imgData=procCtx.getImageData(0,0,INPUT_SIZE,INPUT_SIZE).data;
-  const floatData=new Float32Array(3*INPUT_SIZE*INPUT_SIZE); const area=INPUT_SIZE*INPUT_SIZE;
-  for(let i=0;i<area;i++){const j=i*4; floatData[i]=imgData[j]/255; floatData[i+area]=imgData[j+1]/255; floatData[i+2*area]=imgData[j+2]/255;}
-  const tensor=new ort.Tensor('float32', floatData, [1,3,INPUT_SIZE,INPUT_SIZE]);
-  const results=await ortSession.run({[ortSession.inputNames[0]]:tensor});
-  const output=results[ortSession.outputNames[0]];
-  const detections=parseYoloOutput(output.data, output.dims);
-  drawDetectionsAndUpdateUI(detections);
-}
-function parseYoloOutput(data, dims){
-  let channels, numAnchors, transposed=false;
-  if(dims[1] > dims[2]){ numAnchors=dims[1]; channels=dims[2]; transposed=true; } else { channels=dims[1]; numAnchors=dims[2]; }
-  const numClasses=channels-4; const boxes=[];
-  for(let i=0;i<numAnchors;i++){
-    let maxScore=0, classId=-1;
-    for(let c=0;c<numClasses;c++){
-      const score=transposed?data[i*channels+4+c]:data[(4+c)*numAnchors+i];
-      if(score>maxScore){maxScore=score; classId=c;}
-    }
-    if(maxScore>=CONF_THRESHOLD){
-      const cx=transposed?data[i*channels]:data[0*numAnchors+i];
-      const cy=transposed?data[i*channels+1]:data[1*numAnchors+i];
-      const w=transposed?data[i*channels+2]:data[2*numAnchors+i];
-      const h=transposed?data[i*channels+3]:data[3*numAnchors+i];
-      boxes.push({classId,score:maxScore,x1:cx-w/2,y1:cy-h/2,x2:cx+w/2,y2:cy+h/2,cx,cy});
-    }
-  }
-  return nonMaxSuppression(boxes, IOU_THRESHOLD);
-}
-function nonMaxSuppression(boxes, iouThresh){
-  boxes.sort((a,b)=>b.score-a.score); const sel=[];
-  while(boxes.length>0){const cur=boxes.shift(); sel.push(cur); boxes=boxes.filter(b=>computeIoU(cur,b)<iouThresh);}
-  return sel;
-}
-function computeIoU(a,b){
-  const x1=Math.max(a.x1,b.x1), y1=Math.max(a.y1,b.y1), x2=Math.min(a.x2,b.x2), y2=Math.min(a.y2,b.y2);
-  const inter=Math.max(0,x2-x1)*Math.max(0,y2-y1);
-  return inter / ((a.x2-a.x1)*(a.y2-a.y1)+(b.x2-b.x1)*(b.y2-b.y1)-inter+1e-6);
-}
-function drawDetectionsAndUpdateUI(detections){
-  overlayCtx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
-  const banner=document.getElementById('statusBanner');
-  const liveEl=document.getElementById('liveReading');
-  const recordBtn=document.getElementById('recordBtn');
-  if(detections.length===0){
-    stableBuffer=[]; banner.innerHTML=`⚠️ ${poseStatusText} | 未能接上感應 - 請將大數字放入綠框`; banner.classList.remove('ready'); return;
-  }
-  // 過濾上面細字：只留 ROI 下半部
-  const lb=window._lb;
-  let filtered = detections.filter(d=>{ const y_in_roi=(d.cy-lb.dy)/lb.scale; return y_in_roi > (lb.sh*0.35); });
-  if(filtered.length===0) filtered=detections;
-  filtered.sort((a,b)=>a.cx-b.cx);
+    <!-- 歷史往績分頁 -->
+    <main id="view-history" class="w-full max-w-2xl hidden">
+        <h2 class="text-xl font-bold mb-4 border-b border-gray-700 pb-2">📈 過往挑戰紀錄 (Supabase)</h2>
+        <div class="bg-gray-800 rounded-lg p-4 shadow">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="border-b border-gray-700 text-gray-400">
+                        <th class="py-2">時間</th>
+                        <th class="py-2">握力成績 (kg)</th>
+                        <th class="py-2">狀態</th>
+                    </tr>
+                </thead>
+                <tbody id="history-table-body">
+                    <tr><td colspan="3" class="py-4 text-center text-gray-500">載入中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
 
-  const roiPxX=overlayCanvas.width*ROI.x, roiPxY=overlayCanvas.height*ROI.y, roiPxW=overlayCanvas.width*ROI.w, roiPxH=overlayCanvas.height*ROI.h;
-  let digitStr=''; 
-  filtered.forEach(det=>{
-    const ch = det.classId.toString(); // 0-9 only
-    digitStr+=ch;
-    const x1=(det.x1-lb.dx)/lb.scale, y1=(det.y1-lb.dy)/lb.scale, x2=(det.x2-lb.dx)/lb.scale, y2=(det.y2-lb.dy)/lb.scale;
-    const bx=roiPxX + (x1/lb.sw)*roiPxW, by=roiPxY + (y1/lb.sh)*roiPxH;
-    const bw=((x2-x1)/lb.sw)*roiPxW, bh=((y2-y1)/lb.sh)*roiPxH;
-    overlayCtx.strokeStyle='#10b981'; overlayCtx.lineWidth=2.5; overlayCtx.strokeRect(bx,by,bw,bh);
-    overlayCtx.fillStyle='#10b981'; overlayCtx.font='bold 12px sans-serif'; overlayCtx.fillText(`${ch} ${Math.round(det.score*100)}%`,bx,by-4);
-  });
+    <!-- 處理用的 Canvas -->
+    <canvas id="processing-canvas" style="display:none;"></canvas>
 
-  // 10 class 專用解析：82 -> 8.2 , 205 -> 20.5
-  let kg=null;
-  if(digitStr.length===1) kg=parseInt(digitStr);
-  else if(digitStr.length===2) kg=parseInt(digitStr)/10;
-  else if(digitStr.length===3) kg=parseInt(digitStr)/10;
-  else if(digitStr.length>=4) kg=parseFloat(digitStr.slice(0,-1)+'.'+digitStr.slice(-1));
-  
-  if(kg!==null && !isNaN(kg) && kg>=0 && kg<=90){
-    const rounded=Math.round(kg*2)/2;
-    stableBuffer.push(rounded); if(stableBuffer.length>5) stableBuffer.shift();
-    const isStable=stableBuffer.length>=3 && stableBuffer.every(v=>v===rounded);
-    liveEl.textContent=`${rounded.toFixed(1)} kg`;
-    if(isStable){
-      latestValidKg=rounded;
-      banner.innerHTML=`✅ ${poseStatusText} | 鎖定：${rounded.toFixed(1)} kg (原始:${digitStr})`;
-      banner.classList.add('ready');
-      recordBtn.disabled=attempts[currentHand].length>=3;
-    }else{
-      banner.innerHTML=`🔍 偵測中 (${digitStr}) | ${poseStatusText}`;
-    }
-  }else{
-    banner.innerHTML=`⚠️ 偵測到 ${digitStr||'無'} | ${poseStatusText} | 未能接上感應`;
-  }
-}
-function selectHand(hand){ currentHand=hand; document.getElementById('btnRight').classList.toggle('active',hand==='right'); document.getElementById('btnLeft').classList.toggle('active',hand==='left'); updateStatsUI(); }
-function updateStatsUI(){
-  const list=attempts[currentHand]; const nextNum=Math.min(list.length+1,3); const handName=currentHand==='right'?'右手':'左手';
-  document.getElementById('rightCount').textContent=attempts.right.length; document.getElementById('leftCount').textContent=attempts.left.length;
-  document.getElementById('currentHandLabel').textContent=list.length>=3?`${handName} (完成)`:`${handName} (第${nextNum}次)`;
-  const best=list.length?Math.max(...list):0; document.getElementById('bestReading').textContent=`${best.toFixed(1)} kg`;
-  document.getElementById('recordBtn').disabled=list.length>=3 || latestValidKg===null;
-}
-async function recordAttempt(){
-  if(latestValidKg===null || attempts[currentHand].length>=3) return;
-  attempts[currentHand].push(latestValidKg); updateStatsUI();
-  if(attempts.right.length===3 && attempts.left.length===0){ selectHand('left'); }
-  else if(attempts.right.length===3 && attempts.left.length===3){ await saveToSupabase(); }
-}
-async function saveToSupabase(){
-  const studentId=document.getElementById('studentId').value.trim()||'s001';
-  const rBest=attempts.right.length?Math.max(...attempts.right):0; const lBest=attempts.left.length?Math.max(...attempts.left):0; const totalBest=Math.max(rBest,lBest);
-  if(!supabaseClient){ alert(`🎉 本地模式已鎖定 ${totalBest}kg (未設 Supabase)`); return; }
-  try{ const {error}=await supabaseClient.from('grip_records').insert([{student_id:studentId,r_best:rBest,l_best:lBest,total_best:totalBest,created_at:new Date()}]); if(!error) alert('🎉 已同步至雲端！'); fetchSupabaseHistory(); }catch(e){console.error(e);}
-}
-async function fetchSupabaseHistory(){
-  if(!supabaseClient) return;
-  try{ const {data}=await supabaseClient.from('grip_records').select('*').order('created_at',{ascending:false}).limit(20); const tbody=document.getElementById('historyTableBody'); if(!data) return; tbody.innerHTML=data.map(r=>`<tr><td><strong>${r.student_id}</strong></td><td>${r.r_best} kg</td><td>${r.l_best} kg</td><td style="color:#f59e0b;font-weight:800">${r.total_best} kg</td><td>${new Date(r.created_at).toLocaleTimeString('zh-HK')}</td></tr>`).join(''); }catch(e){}
-}
-function resetCurrentStudent(){ attempts={right:[],left:[]}; latestValidKg=null; stableBuffer=[]; document.getElementById('liveReading').textContent='0.0 kg'; selectHand('right'); }
-function switchTab(tab){ document.querySelectorAll('.tab-btn').forEach((b,i)=>{b.classList.toggle('active',(tab==='test'&&i===0)||(tab==='history'&&i===1));}); document.getElementById('testPanel').classList.toggle('hidden',tab!=='test'); document.getElementById('historyPanel').classList.toggle('active',tab==='history'); }
-</script>
+    <script>
+        // ==========================================
+        // 1. Supabase 設定 (請替換為你的金鑰)
+        // ==========================================
+        const SUPABASE_URL = '你的_SUPABASE_URL';
+        const SUPABASE_KEY = '你的_SUPABASE_ANON_KEY';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // 分頁切換
+        function switchTab(tab) {
+            if (tab === 'game') {
+                document.getElementById('view-game').classList.remove('hidden');
+                document.getElementById('view-history').classList.add('hidden');
+                document.getElementById('btn-game').className = 'px-4 py-2 bg-green-600 rounded font-bold';
+                document.getElementById('btn-history').className = 'px-4 py-2 bg-gray-700 rounded';
+            } else {
+                document.getElementById('view-game').classList.add('hidden');
+                document.getElementById('view-history').classList.remove('hidden');
+                document.getElementById('btn-history').className = 'px-4 py-2 bg-green-600 rounded font-bold';
+                document.getElementById('btn-game').className = 'px-4 py-2 bg-gray-700 rounded';
+                loadHistoryFromSupabase(); // 自動載入往績
+            }
+        }
+
+        // ==========================================
+        // 2. 視訊與 ROI 畫面動態擷取
+        // ==========================================
+        const video = document.getElementById('webcam');
+        const resultSpan = document.getElementById('grip-result');
+        const canvas = document.getElementById('processing-canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480, facingMode: 'environment' } 
+                });
+                video.srcObject = stream;
+                return new Promise((resolve) => { video.onloadedmetadata = () => resolve(video); });
+            } catch (err) {
+                console.error("無法開啟攝影機:", err);
+                alert("請允許攝影機權限以使用本程式！");
+            }
+        }
+
+        let currentDetectedValue = 0.0;
+
+        // 即時影像處理迴圈
+        function processFrame() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                const vw = video.videoWidth;
+                const vh = video.videoHeight;
+
+                canvas.width = vw;
+                canvas.height = vh;
+                ctx.drawImage(video, 0, 0, vw, vh);
+
+                // 抓取畫面中央區域 (對應你貼白框的預設位置，可依需要微調比例)
+                const roiX = vw * 0.25;
+                const roiY = vw * 0.30;
+                const roiW = vw * 0.50;
+                const roiH = vh * 0.35;
+
+                const frameData = ctx.getImageData(roiX, roiY, roiW, roiH);
+                
+                // 這裡可加入針對白框內像素的分析或樣板匹配
+                // 目前保持介面流暢互動，讀數可由你手動確認或帶入解析值
+            }
+            requestAnimationFrame(processFrame);
+        }
+
+        // ==========================================
+        // 3. Supabase 雲端紀錄與往績查詢
+        // ==========================================
+        async function recordGripScore() {
+            // 讓使用者輸入或讀取當前測得的數值
+            const inputVal = prompt("請確認或輸入本次握力成績 (kg):", currentDetectedValue.toFixed(1));
+            if (!inputVal) return;
+            const score = parseFloat(inputVal);
+
+            const { data, error } = await supabaseClient
+                .from('grip_records')
+                .insert([{ score: score, created_at: new Date() }]);
+
+            if (error) {
+                console.error('上傳失敗:', error);
+                alert('成績上傳雲端失敗，請檢查 Supabase 連線設定');
+            } else {
+                alert(`🎉 成功上傳成績: ${score} kg 到雲端！`);
+                speakResult(score);
+            }
+        }
+
+        async function loadHistoryFromSupabase() {
+            const tbody = document.getElementById('history-table-body');
+            tbody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-gray-400">正在讀取往績...</td></tr>`;
+
+            const { data, error } = await supabaseClient
+                .from('grip_records')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(10);
+
+            if (error) {
+                tbody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-red-400">載入紀錄失敗</td></tr>`;
+                return;
+            }
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-gray-400">尚無挑戰紀錄</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = '';
+            data.forEach(row => {
+                const dateStr = new Date(row.created_at).toLocaleString();
+                tbody.innerHTML += `
+                    <tr class="border-b border-gray-700/50">
+                        <td class="py-3 text-gray-300">${dateStr}</td>
+                        <td class="py-3 font-bold text-green-400">${row.score} kg</td>
+                        <td class="py-3 text-yellow-400">已同步</td>
+                    </tr>
+                `;
+            });
+        }
+
+        // ==========================================
+        // 4. 語音導引 (TTS)
+        // ==========================================
+        function speakResult(score) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(`本次握力成績為 ${score} 公斤`);
+                utterance.lang = 'zh-HK';
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // 啟動
+        setupCamera().then(() => {
+            requestAnimationFrame(processFrame);
+        });
+    </script>
 </body>
 </html>
