@@ -417,8 +417,8 @@
     // --- 2. 檢查 Session 與學號一致性 ---
     window.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
-        const urlStudentId = urlParams.get('student_id');
-        const localStudentId = sessionStorage.getItem('current_student_id');
+        const urlStudentId = urlParams.get('user_id');
+        const localStudentId = sessionStorage.getItem('current_user_id');
 
         if (!localStudentId || (urlStudentId && urlStudentId !== localStudentId)) {
             alert('⚠️ 偵測到身分不符或未登入，請先重新登入！');
