@@ -1,9 +1,9 @@
-
+<!DOCTYPE html>
 <html lang="zh-HK">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AI 左右手手握力測驗 - 自動感應 Fix 版</title>
+<title>AI 左右手手握力測驗 - GitHub Pages 版</title>
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -13,7 +13,7 @@
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 body{background-color:var(--bg-dark);color:var(--text-main);display:flex;justify-content:center;padding:16px;min-height:100vh}
 .app-container{width:100%;max-width:520px;display:flex;flex-direction:column;gap:14px}
-.header{text-align:center;padding:8px 0}.header h1{color:var(--accent-orange);font-size:1.4rem;font-weight:800}.header p{color:var(--text-muted);font-size:0.8rem;margin-top:2px}
+.header{text-align:center;padding:8px 0}.header h1{color:var(--accent-orange);font-size:1.4rem;font-weight:800}.header p{color:var(--text-muted);font-size:0.75rem;margin-top:2px}
 .tabs{display:flex;border-bottom:1px solid var(--border-color)}.tab-btn{flex:1;background:none;border:none;color:var(--text-muted);padding:10px;font-size:0.95rem;font-weight:700;cursor:pointer;border-bottom:3px solid transparent}.tab-btn.active{color:var(--accent-orange);border-bottom-color:var(--accent-orange)}
 .student-bar{background:var(--card-bg);border:1px solid var(--border-color);padding:10px;border-radius:10px;display:flex;justify-content:space-between;align-items:center}
 .video-wrap{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:12px;overflow:hidden;border:2px solid var(--accent-orange)}
@@ -22,7 +22,7 @@ body{background-color:var(--bg-dark);color:var(--text-main);display:flex;justify
 .roi-label{font-size:10px;background:#10b981;color:#000;padding:2px 6px;border-radius:0 0 6px 6px;font-weight:800}
 .stat-row{display:flex;gap:8px}.stat-card{flex:1;background:var(--card-bg);border:1px solid var(--border-color);padding:10px;border-radius:10px;text-align:center}
 .stat-title{font-size:11px;color:var(--text-muted)}.stat-val{font-size:1.1rem;font-weight:800;margin-top:4px}.stat-val.green{color:var(--accent-green)}.stat-val.orange{color:var(--accent-orange)}
-.status-banner{background:#1a3a2a;border:1px solid #10b981;color:#10b981;padding:10px;border-radius:10px;text-align:center;font-weight:700;font-size:0.9rem}.status-banner.ready{background:#0f3a1a}
+.status-banner{background:#1a3a2a;border:1px solid #10b981;color:#10b981;padding:10px;border-radius:10px;text-align:center;font-weight:700;font-size:0.9rem;line-height:1.4}.status-banner.ready{background:#0f3a1a}
 .primary-btn{width:100%;background:linear-gradient(135deg,#f59e0b,#ef4444);border:none;color:#fff;padding:14px;border-radius:12px;font-weight:800;font-size:1rem;cursor:pointer}.primary-btn:disabled{opacity:0.4}
 .btn-sm{padding:6px 10px;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-main);cursor:pointer}
 .history-panel{display:none}.history-panel.active{display:block;background:var(--card-bg);border-radius:12px;padding:10px} table{width:100%;border-collapse:collapse;font-size:12px} th,td{padding:6px;border-bottom:1px solid var(--border-color);text-align:center}
@@ -32,15 +32,15 @@ body{background-color:var(--bg-dark);color:var(--text-main);display:flex;justify
 </head>
 <body>
 <div class="app-container">
-  <div class="header"><h1>AI 左右手手握力測驗</h1><p>YOLOv8 智慧螢幕數值偵測 - 自動感應 Fix 版</p></div>
+  <div class="header"><h1>AI 左右手手握力測驗</h1><p>YOLOv8 智慧螢幕數值偵測 - GitHub 自動感應 Fix 版</p></div>
   <div class="tabs"><button class="tab-btn active" onclick="switchTab('test')">🤜 手握力測驗</button><button class="tab-btn" onclick="switchTab('history')">📋 雲端歷史成績</button></div>
   <div id="testPanel">
-    <div class="student-bar"><div>當前學生：<input id="studentId" value="s001" style="width:70px;background:#111;color:#f59e0b;border:1px solid #333;border-radius:6px;padding:4px 8px;font-weight:700"></div><button class="btn-sm" onclick="resetCurrentStudent()">重置本生數據</button></div>
+    <div class="student-bar"><div>當前學生：<input id="studentId" value="s001" style="width:80px;background:#111;color:#f59e0b;border:1px solid #333;border-radius:6px;padding:4px 8px;font-weight:700"></div><button class="btn-sm" onclick="resetCurrentStudent()">重置本生數據</button></div>
     <select id="cameraSelect" style="width:100%;background:var(--card-bg);color:#fff;border:1px solid var(--border-color);padding:8px;border-radius:8px"></select>
     <div class="video-wrap" id="videoWrap">
       <video id="video" autoplay playsinline muted></video>
       <canvas id="overlayCanvas"></canvas>
-      <div class="roi-box" id="roiBox"><span class="roi-label">請將螢幕數字對準此線框內</span></div>
+      <div class="roi-box" id="roiBox"><span class="roi-label">請將下面大數字對準此框</span></div>
     </div>
     <div class="hand-switch"><button id="btnRight" class="hand-btn active" onclick="selectHand('right')">右手測驗 (<span id="rightCount">0</span>/3)</button><button id="btnLeft" class="hand-btn" onclick="selectHand('left')">左手測驗 (<span id="leftCount">0</span>/3)</button></div>
     <div class="stat-row">
@@ -48,7 +48,7 @@ body{background-color:var(--bg-dark);color:var(--text-main);display:flex;justify
       <div class="stat-card"><div class="stat-title">即時讀數</div><div id="liveReading" class="stat-val orange">0.0 kg</div></div>
       <div class="stat-card"><div class="stat-title">本手最佳</div><div id="bestReading" class="stat-val orange">0.0 kg</div></div>
     </div>
-    <div id="statusBanner" class="status-banner">⏳ 正在載入模型... 請用 http://localhost 開</div>
+    <div id="statusBanner" class="status-banner">⏳ 正在載入 ./models/best.onnx ...</div>
     <button id="recordBtn" class="primary-btn" onclick="recordAttempt()" disabled>💾 鎖定並同步儲存至雲端</button>
   </div>
   <div id="historyPanel" class="history-panel">
@@ -63,9 +63,10 @@ const SUPABASE_ANON_KEY='your-anon-key';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const MODEL_PATH='./models/best.onnx';
 const INPUT_SIZE=640;
-const CONF_THRESHOLD=0.35;
-const IOU_THRESHOLD=0.4;
-const ROI={x:0.22,y:0.32,w:0.56,h:0.25};
+const CONF_THRESHOLD=0.45; // 改高少少，過濾上面細字
+const IOU_THRESHOLD=0.35;
+// 重點：縮細淨係捉下面大 LCD，你張圖就係因為框太大
+const ROI={x:0.35, y:0.42, w:0.34, h:0.20};
 let ortSession=null, poseInstance=null, isProcessing=false, currentStream=null;
 let currentHand='right', attempts={right:[],left:[]}, stableBuffer=[], latestValidKg=null, poseStatusText='姿勢標準';
 
@@ -75,11 +76,7 @@ const overlayCtx=overlayCanvas.getContext('2d');
 const procCanvas=document.getElementById('procCanvas');
 const procCtx=procCanvas.getContext('2d',{willReadFrequently:true});
 const roiBox=document.getElementById('roiBox');
-
-function layoutROI(){
-  roiBox.style.left=(ROI.x*100)+'%'; roiBox.style.top=(ROI.y*100)+'%';
-  roiBox.style.width=(ROI.w*100)+'%'; roiBox.style.height=(ROI.h*100)+'%';
-}
+function layoutROI(){ roiBox.style.left=(ROI.x*100)+'%'; roiBox.style.top=(ROI.y*100)+'%'; roiBox.style.width=(ROI.w*100)+'%'; roiBox.style.height=(ROI.h*100)+'%'; }
 layoutROI();
 
 window.addEventListener('DOMContentLoaded', async()=>{
@@ -93,12 +90,10 @@ async function loadYoloModel(){
     ort.env.wasm.wasmPaths='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
     ort.env.wasm.numThreads=1; ort.env.wasm.simd=true;
     ortSession=await ort.InferenceSession.create(MODEL_PATH,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
-    banner.textContent='✅ 模型就緒！請將數字對準綠框';
+    banner.textContent='✅ 模型就緒！請將 8.2 對準綠框正中';
     banner.classList.add('ready');
-    console.log('Model OK', ortSession.inputNames, ortSession.outputNames);
   }catch(err){
-    console.error(err);
-    banner.innerHTML=`❌ 無法載入 ${MODEL_PATH}<br>${err.message}<br>請用 npx http-server 開，唔好用 file://`;
+    banner.innerHTML=`❌ 載入失敗 ${MODEL_PATH}<br>${err.message}<br>GitHub 請確認 models/best.onnx 有無上傳`;
   }
 }
 function initMediaPipePose(){
@@ -119,7 +114,7 @@ async function initCameras(){
     select.innerHTML=''; vDevs.forEach((d,i)=>{const o=document.createElement('option'); o.value=d.deviceId; o.text=d.label||`相機 ${i+1}`; select.appendChild(o);});
     select.onchange=()=>startCamera(select.value);
     if(vDevs.length>0) startCamera(vDevs[0].deviceId);
-  }catch(e){document.getElementById('statusBanner').textContent='❌ 無法存取攝影機';}
+  }catch(e){document.getElementById('statusBanner').textContent='❌ 無法存取攝影機 - 請用 https';}
 }
 async function startCamera(deviceId){
   if(currentStream) currentStream.getTracks().forEach(t=>t.stop());
@@ -143,7 +138,7 @@ async function runYoloDetection(){
   const nw=sw*scale, nh=sh*scale, dx=(INPUT_SIZE-nw)/2, dy=(INPUT_SIZE-nh)/2;
   procCtx.fillStyle='#000'; procCtx.fillRect(0,0,INPUT_SIZE,INPUT_SIZE);
   procCtx.drawImage(video, sx,sy,sw,sh, dx,dy,nw,nh);
-  window._lb={dx,dy,scale,sw,sh,sx,sy,vw,vh};
+  window._lb={dx,dy,scale,sw,sh};
 
   const imgData=procCtx.getImageData(0,0,INPUT_SIZE,INPUT_SIZE).data;
   const floatData=new Float32Array(3*INPUT_SIZE*INPUT_SIZE); const area=INPUT_SIZE*INPUT_SIZE;
@@ -170,7 +165,7 @@ function parseYoloOutput(data, dims){
       const cy=transposed?data[i*channels+1]:data[1*numAnchors+i];
       const w=transposed?data[i*channels+2]:data[2*numAnchors+i];
       const h=transposed?data[i*channels+3]:data[3*numAnchors+i];
-      boxes.push({classId,score:maxScore,x1:cx-w/2,y1:cy-h/2,x2:cx+w/2,y2:cy+h/2,cx});
+      boxes.push({classId,score:maxScore,x1:cx-w/2,y1:cy-h/2,x2:cx+w/2,y2:cy+h/2,cx,cy});
     }
   }
   return nonMaxSuppression(boxes, IOU_THRESHOLD);
@@ -187,34 +182,55 @@ function computeIoU(a,b){
 }
 function drawDetectionsAndUpdateUI(detections){
   overlayCtx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
-  const banner=document.getElementById('statusBanner'); const liveEl=document.getElementById('liveReading'); const recordBtn=document.getElementById('recordBtn');
+  const banner=document.getElementById('statusBanner');
+  const liveEl=document.getElementById('liveReading');
+  const recordBtn=document.getElementById('recordBtn');
   if(detections.length===0){
-    stableBuffer=[]; banner.innerHTML=`⚠️ ${poseStatusText} | 未能接上感應 - 請將螢幕數字放入綠框中央`; banner.classList.remove('ready'); return;
+    stableBuffer=[]; banner.innerHTML=`⚠️ ${poseStatusText} | 未能接上感應 - 請將大數字放入綠框`; banner.classList.remove('ready'); return;
   }
-  const lb=window._lb; const roiPxX=overlayCanvas.width*ROI.x, roiPxY=overlayCanvas.height*ROI.y, roiPxW=overlayCanvas.width*ROI.w, roiPxH=overlayCanvas.height*ROI.h;
-  detections.sort((a,b)=>a.cx-b.cx);
-  let digitStr=''; let hasDot=false;
-  detections.forEach(det=>{
-    let label=det.classId.toString();
-    if(det.classId===10){ label='.'; hasDot=true; } // 如果你模型 10=dot
-    if(det.classId<=10) digitStr+=label;
+  // 過濾走上面細字：只留 y 在 ROI 下半部
+  const lb=window._lb;
+  let filtered = detections.filter(d=>{
+    const y_in_roi = (d.cy - lb.dy)/lb.scale; // 在 ROI 內嘅 y
+    return y_in_roi > (lb.sh*0.35); // 35% 以下先係大字
+  });
+  if(filtered.length===0) filtered=detections; // fallback
+  filtered.sort((a,b)=>a.cx-b.cx);
+
+  const roiPxX=overlayCanvas.width*ROI.x, roiPxY=overlayCanvas.height*ROI.y, roiPxW=overlayCanvas.width*ROI.w, roiPxH=overlayCanvas.height*ROI.h;
+  let digitStr=''; let debugStr='';
+  filtered.forEach(det=>{
+    let ch = det.classId<=9 ? det.classId.toString() : (det.classId===10?'.':'');
+    if(ch==='') return;
+    digitStr+=ch;
+    debugStr+=ch;
     const x1=(det.x1-lb.dx)/lb.scale, y1=(det.y1-lb.dy)/lb.scale, x2=(det.x2-lb.dx)/lb.scale, y2=(det.y2-lb.dy)/lb.scale;
-    const bx=roiPxX + (x1/lb.sw)*roiPxW; const by=roiPxY + (y1/lb.sh)*roiPxH;
-    const bw=((x2-x1)/lb.sw)*roiPxW; const bh=((y2-y1)/lb.sh)*roiPxH;
+    const bx=roiPxX + (x1/lb.sw)*roiPxW, by=roiPxY + (y1/lb.sh)*roiPxH;
+    const bw=((x2-x1)/lb.sw)*roiPxW, bh=((y2-y1)/lb.sh)*roiPxH;
     overlayCtx.strokeStyle='#10b981'; overlayCtx.lineWidth=2.5; overlayCtx.strokeRect(bx,by,bw,bh);
-    overlayCtx.fillStyle='#10b981'; overlayCtx.font='bold 12px sans-serif'; overlayCtx.fillText(`${label} ${Math.round(det.score*100)}%`,bx,by-4);
+    overlayCtx.fillStyle='#10b981'; overlayCtx.font='bold 12px sans-serif'; overlayCtx.fillText(`${ch} ${Math.round(det.score*100)}%`,bx,by-4);
   });
 
   let kg=null;
-  if(hasDot){ kg=parseFloat(digitStr); }
-  else if(digitStr.length>=2){ kg=parseInt(digitStr,10)/10.0; } // 例如 252 -> 25.2
-  if(kg!==null && kg>=0.5 && kg<=90){
+  if(digitStr.includes('.')){ kg=parseFloat(digitStr); }
+  else if(digitStr.length>=2){ kg=parseInt(digitStr,10)/10.0; } // 82 -> 8.2 嘅容錯
+  else if(digitStr.length===1){ kg=parseFloat(digitStr); }
+
+  if(kg!==null && !isNaN(kg) && kg>=0 && kg<=90){
     const rounded=Math.round(kg*2)/2;
     stableBuffer.push(rounded); if(stableBuffer.length>5) stableBuffer.shift();
     const isStable=stableBuffer.length>=3 && stableBuffer.every(v=>v===rounded);
     liveEl.textContent=`${rounded.toFixed(1)} kg`;
-    if(isStable){ latestValidKg=rounded; banner.innerHTML=`✅ ${poseStatusText} | 鎖定：${rounded.toFixed(1)} kg`; banner.classList.add('ready'); recordBtn.disabled=attempts[currentHand].length>=3; }
-    else { banner.innerHTML=`🔍 偵測中 (${digitStr}) | ${poseStatusText}`; }
+    if(isStable){
+      latestValidKg=rounded;
+      banner.innerHTML=`✅ ${poseStatusText} | 鎖定：${rounded.toFixed(1)} kg (${digitStr})`;
+      banner.classList.add('ready');
+      recordBtn.disabled=attempts[currentHand].length>=3;
+    }else{
+      banner.innerHTML=`🔍 偵測中 (${digitStr}) | ${poseStatusText}`;
+    }
+  }else{
+    banner.innerHTML=`⚠️ 偵測到 ${digitStr || '無'} | ${poseStatusText} | 未能接上感應`;
   }
 }
 function selectHand(hand){ currentHand=hand; document.getElementById('btnRight').classList.toggle('active',hand==='right'); document.getElementById('btnLeft').classList.toggle('active',hand==='left'); updateStatsUI(); }
@@ -234,7 +250,7 @@ async function recordAttempt(){
 async function saveToSupabase(){
   const studentId=document.getElementById('studentId').value.trim()||'s001';
   const rBest=attempts.right.length?Math.max(...attempts.right):0; const lBest=attempts.left.length?Math.max(...attempts.left):0; const totalBest=Math.max(rBest,lBest);
-  try{ const {error}=await supabaseClient.from('grip_records').insert([{student_id:studentId,r_best:rBest,l_best:lBest,total_best:totalBest,created_at:new Date()}]); if(error) console.error(error); else alert('🎉 已同步至雲端！'); fetchSupabaseHistory(); }catch(e){console.error(e);}
+  try{ const {error}=await supabaseClient.from('grip_records').insert([{student_id:studentId,r_best:rBest,l_best:lBest,total_best:totalBest,created_at:new Date()}]); if(!error) alert('🎉 已同步至雲端！'); fetchSupabaseHistory(); }catch(e){console.error(e);}
 }
 async function fetchSupabaseHistory(){
   try{ const {data}=await supabaseClient.from('grip_records').select('*').order('created_at',{ascending:false}).limit(20); const tbody=document.getElementById('historyTableBody'); if(!data) return; tbody.innerHTML=data.map(r=>`<tr><td><strong>${r.student_id}</strong></td><td>${r.r_best} kg</td><td>${r.l_best} kg</td><td style="color:#f59e0b;font-weight:800">${r.total_best} kg</td><td>${new Date(r.created_at).toLocaleTimeString('zh-HK')}</td></tr>`).join(''); }catch(e){}
@@ -244,4 +260,6 @@ function switchTab(tab){ document.querySelectorAll('.tab-btn').forEach((b,i)=>{b
 </script>
 </body>
 </html>
-試完如果仲係右邊冇反應，喺 console 打 `console.log(detections)` 睇吓有冇出框，如果有框但冇數字，就係你 `best.onnx` 嘅 class 唔係 0-9，要話我知你 label 係咩，我再幫你對。
+
+
+你 push 完話我知條 link，我幫你睇埋 console 有冇報錯。
