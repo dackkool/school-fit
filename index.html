@@ -6,7 +6,7 @@
     <title>小學生 AI 雲端體適能系統 | 主頁</title>
     <!-- Supabase JS 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Face-api.js 用於多角度人臉特徵擷取 -->
+    <!-- Face-api.js 用於人臉識別與特徵擷取 -->
     <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
     
     <style>
@@ -45,7 +45,7 @@
             padding: 10px;
             background: none;
             border: none;
-            font-size: 1.05rem;
+            font-size: 0.95rem;
             font-weight: bold;
             color: #888;
             cursor: pointer;
@@ -117,7 +117,6 @@
             cursor: pointer;
         }
 
-        /* 登入後的內部 Sub Tabs (支援動態增減) */
         .menu-sub-tabs {
             display: flex;
             border-bottom: 2px solid #eee;
@@ -129,7 +128,7 @@
             padding: 8px 4px;
             background: none;
             border: none;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             font-weight: bold;
             color: #888;
             cursor: pointer;
@@ -175,11 +174,10 @@
         .exercise-desc { font-size: 0.78rem; color: #666; margin-top: 2px; }
         .arrow-icon { font-size: 1.2rem; color: #ec407a; font-weight: bold; }
 
-        /* 相機與視訊區 */
         .video-wrapper {
             position: relative;
             width: 100%;
-            height: 220px;
+            height: 240px;
             border-radius: 12px;
             overflow: hidden;
             border: 2px solid #33691e;
@@ -191,7 +189,6 @@
         }
         video { width: 100%; height: 100%; object-fit: cover; }
 
-        /* 老師端過往成績篩選與表格區 */
         .filter-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -226,21 +223,22 @@
 <body>
 
 <div id="main-card">
-    <!-- 1. 未登入：身分驗證區 (登入 / 申請) -->
+    <!-- 1. 未登入：身分驗證區 -->
     <div id="auth-view">
         <h1>體適能 AI 雲端平台</h1>
-        <div class="subtitle">香港小學體適能自我挑戰與多角度識別系統</div>
+        <div class="subtitle">香港小學體適能自我挑戰與多角度人臉識別系統</div>
 
         <div class="auth-tabs">
-            <button class="auth-tab-btn active" onclick="switchAuthTab('login')">用戶登入</button>
+            <button class="auth-tab-btn active" onclick="switchAuthTab('login')">密碼登入</button>
+            <button class="auth-tab-btn" onclick="switchAuthTab('face-login')">🤖 用人臉登入</button>
             <button class="auth-tab-btn" onclick="switchAuthTab('register')">申請帳戶</button>
         </div>
 
-        <!-- 表單 A: 登入 -->
+        <!-- 表單 A: 密碼登入 -->
         <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)" autocomplete="off">
             <div class="input-group">
                 <label>帳號 / 學號：</label>
-                <input type="text" id="login-student-id" placeholder="例如: S001 或 T001" autocomplete="off" required>
+                <input type="text" id="login-student-id" placeholder="例如: S001" autocomplete="off" required>
             </div>
             <div class="input-group">
                 <label>登入密碼：</label>
@@ -249,7 +247,16 @@
             <button type="submit" class="btn-primary">立即登入</button>
         </form>
 
-        <!-- 表單 B: 註冊 -->
+        <!-- 表單 B: 人臉登入視圖 -->
+        <div id="face-login-form" class="auth-form" style="text-align: center;">
+            <div class="video-wrapper" style="height: 200px; border-color: #ec407a;">
+                <video id="login-webcam" autoplay muted playsinline></video>
+            </div>
+            <div id="face-login-status" style="font-size: 0.85rem; font-weight: bold; color: #ec407a; margin-bottom: 8px;">請正對鏡頭，點擊下方按鈕進行識別</div>
+            <button type="button" class="btn-primary" onclick="executeFaceLogin()" style="margin-top: 0;">🚀 啟動相機刷臉登入</button>
+        </div>
+
+        <!-- 表單 C: 註冊 -->
         <form id="register-form" class="auth-form" onsubmit="handleRegister(event)" autocomplete="off">
             <div class="input-group">
                 <label>真實姓名：</label>
@@ -281,7 +288,7 @@
                 </select>
             </div>
             <div class="input-group">
-                <label>設定密碼 (需含大小寫英文字母及數字，最少6字)：</label>
+                <label>設定密碼 (含大小寫及數字，最少6字)：</label>
                 <input type="password" id="reg-password" placeholder="請設定強密碼" autocomplete="new-password" required>
             </div>
             <button type="submit" class="btn-primary" style="background-color: #4caf50;">成功申請並登入</button>
@@ -297,12 +304,9 @@
             <button class="logout-btn" onclick="handleLogout()">登出</button>
         </div>
 
-        <!-- 登入後的內部 Sub Tabs (根據身分動態生成) -->
-        <div class="menu-sub-tabs" id="menu-sub-tabs-container">
-            <!-- 動態插入 Tab 按鈕 -->
-        </div>
+        <div class="menu-sub-tabs" id="menu-sub-tabs-container"></div>
 
-        <!-- 子分頁 1: 挑戰項目 (學生與老師共用) -->
+        <!-- 子分頁 1: 挑戰項目 -->
         <div id="sub-exercises" class="sub-view active">
             <div class="subtitle" style="margin-bottom: 12px; text-align: left;">請選擇你想進行的體適能 AI 評估</div>
             <div class="exercise-grid">
@@ -349,17 +353,17 @@
             </div>
         </div>
 
-        <!-- 子分頁 2: 人臉多角度登記 (學生與老師共用) -->
+        <!-- 子分頁 2: 人臉多角度登記 (具備語音導航 & 覆蓋舊記錄) -->
         <div id="sub-face-enroll" class="sub-view">
-            <div class="subtitle" style="text-align: left; margin-bottom: 8px;">📷 註冊多角度人臉特徵 (支援 everycone_cam 辨識)</div>
+            <div class="subtitle" style="text-align: left; margin-bottom: 8px;">📷 多角度人臉登記 (將覆蓋並更新舊有的特徵記錄)</div>
             <div class="video-wrapper">
                 <video id="enroll-webcam" autoplay muted playsinline></video>
             </div>
-            <div id="enroll-status" style="font-size: 0.9rem; font-weight: bold; color: #d81b60; margin-bottom: 10px;">準備就緒，請點擊下方按鈕開始記錄</div>
-            <button class="btn-primary" onclick="startFaceEnrollmentSequence()" style="margin-top: 0; background-color: #33691e;">📸 開始多角度人臉登記 (正面/左/右)</button>
+            <div id="enroll-status" style="font-size: 0.9rem; font-weight: bold; color: #d81b60; margin-bottom: 10px;">請點擊下方按鈕開始語音導航登記</div>
+            <button class="btn-primary" onclick="startFaceEnrollmentSequence()" style="margin-top: 0; background-color: #33691e;">🎙️ 開始語音導航人臉登記</button>
         </div>
 
-        <!-- 子分頁 3: 修改個人資料 (學生與老師共用) -->
+        <!-- 子分頁 3: 修改個人資料 (支援性別、班級、班別) -->
         <div id="sub-profile" class="sub-view">
             <form onsubmit="handleUpdateProfile(event)" autocomplete="off">
                 <div class="input-group">
@@ -367,11 +371,18 @@
                     <input type="text" id="update-name" placeholder="輸入新姓名" autocomplete="off" required>
                 </div>
                 <div class="input-group">
-                    <label>級別 / 班別：</label>
+                    <label>級別 (Grade) / 班別 (Class)：</label>
                     <div style="display: flex; gap: 8px;">
                         <input type="text" id="update-grade" placeholder="小一">
                         <input type="text" id="update-class" placeholder="1A">
                     </div>
+                </div>
+                <div class="input-group">
+                    <label>性別 (Gender)：</label>
+                    <select id="update-gender">
+                        <option value="M">男 (Male)</option>
+                        <option value="F">女 (Female)</option>
+                    </select>
                 </div>
                 <hr style="border: 0; border-top: 1px solid #eee; margin: 12px 0;">
                 <div class="input-group">
@@ -391,7 +402,7 @@
         <div id="sub-teacher-hub" class="sub-view">
             <div class="subtitle" style="text-align: left; margin-bottom: 10px;">🏟️ everycone_hub 團體活動管理</div>
             <div style="background: #f1f8e9; padding: 18px; border-radius: 12px; text-align: center; border: 2px dashed #33691e;">
-                <p style="font-size: 0.9rem; color: #33691e; font-weight: bold; margin-bottom: 15px;">按一下下方按鈕即可開啟連續團體活動主控台，即時廣播並掌控全班學生的體適能挑戰。</p>
+                <p style="font-size: 0.9rem; color: #33691e; font-weight: bold; margin-bottom: 15px;">按一下下方按鈕即可開啟連續團體活動主控台。</p>
                 <button class="btn-primary" onclick="window.open('everycone_hub.html', '_blank')">🚀 啟動 everycone_hub 團體大螢幕</button>
             </div>
         </div>
@@ -450,12 +461,13 @@
                             <th>時間</th>
                             <th>學生 (ID)</th>
                             <th>級/班別</th>
+                            <th>性別</th>
                             <th>項目</th>
                             <th>成績</th>
                         </tr>
                     </thead>
                     <tbody id="teacher-records-tbody">
-                        <tr><td colspan="5">正在載入數據...</td></tr>
+                        <tr><td colspan="6">正在載入數據...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -467,16 +479,26 @@
 
 <script>
     // --- 1. Supabase 設定 ---
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const msgBox = document.getElementById('msg-box');
     let allGlobalRecords = [];
     let allGlobalStudents = [];
     let enrollStream = null;
+    let loginStream = null;
 
-    // 頁面載入時檢查 Session
+    // 語音導航函式 (廣東話)
+    function speak(text) {
+        if ('speechSynthesis' in window) {
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = 'zh-HK';
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utter);
+        }
+    }
+
     window.addEventListener('DOMContentLoaded', async () => {
         await loadFaceApiModels();
         const savedId = sessionStorage.getItem('current_user_id');
@@ -488,7 +510,6 @@
         }
     });
 
-    // 載入 Face-api 模型
     async function loadFaceApiModels() {
         try {
             const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
@@ -500,18 +521,91 @@
         }
     }
 
-    // Tab 切換 (登入/註冊)
+    // 認證 Tab 切換
     function switchAuthTab(tab) {
         document.querySelectorAll('.auth-tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
         msgBox.innerText = '';
+        stopLoginWebcam();
 
         if (tab === 'login') {
             document.querySelectorAll('.auth-tab-btn')[0].classList.add('active');
             document.getElementById('login-form').classList.add('active');
-        } else {
+        } else if (tab === 'face-login') {
             document.querySelectorAll('.auth-tab-btn')[1].classList.add('active');
+            document.getElementById('face-login-form').classList.add('active');
+            startLoginWebcam();
+        } else {
+            document.querySelectorAll('.auth-tab-btn')[2].classList.add('active');
             document.getElementById('register-form').classList.add('active');
+        }
+    }
+
+    async function startLoginWebcam() {
+        const video = document.getElementById('login-webcam');
+        try {
+            loginStream = await navigator.mediaDevices.getUserMedia({ video: {} });
+            video.srcObject = loginStream;
+        } catch (e) {
+            console.error("無法開啟相機", e);
+        }
+    }
+
+    function stopLoginWebcam() {
+        if (loginStream) {
+            loginStream.getTracks().forEach(t => t.stop());
+            loginStream = null;
+        }
+    }
+
+    // 🤖 人臉識別登入邏輯
+    async function executeFaceLogin() {
+        const video = document.getElementById('login-webcam');
+        const statusEl = document.getElementById('face-login-status');
+        statusEl.innerText = "🔍 正在進行 AI 人臉識別...";
+        speak("正在識別，請面向鏡頭");
+
+        const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
+        if (!detection) {
+            statusEl.innerText = "⚠️ 找不到人臉，請靠近鏡頭！";
+            speak("找不到人臉，請靠近鏡頭");
+            return;
+        }
+
+        // 從 Supabase 取得所有註冊用戶
+        const { data: users, error } = await supabaseClient.from('students_db').select('*');
+        if (error || !users || users.length === 0) {
+            statusEl.innerText = "⚠️ 資料庫中沒有註冊用戶或讀取失敗。";
+            return;
+        }
+
+        let bestMatchUser = null;
+        let lowestDistance = 0.55; // 相似度門檻
+
+        for (let user of users) {
+            if (!user.face_encoding) continue;
+            // 走訪該用戶的多角度特徵 (front, left, right)
+            for (let poseKey in user.face_encoding) {
+                let storedDesc = new Float32Array(user.face_encoding[poseKey]);
+                let distance = faceapi.euclideanDistance(detection.descriptor, storedDesc);
+                if (distance < lowestDistance) {
+                    lowestDistance = distance;
+                    bestMatchUser = user;
+                }
+            }
+        }
+
+        if (bestMatchUser) {
+            statusEl.innerText = `🎉 識別成功！歡迎 ${bestMatchUser.name}`;
+            speak(`歡迎回來，${bestMatchUser.name}`);
+            stopLoginWebcam();
+            saveSession(bestMatchUser.student_id, bestMatchUser.name, bestMatchUser.role || 'student', bestMatchUser.grade || '', bestMatchUser.class_name || '', bestMatchUser.gender || '');
+            setTimeout(() => {
+                showMenuView(bestMatchUser.student_id, bestMatchUser.name, bestMatchUser.role || 'student');
+            }, 1000);
+        } else {
+            statusEl.innerText = "❌ 辨識失敗：找不到符合的臉孔，請改用密碼登入或先註冊。";
+            speak("辨識失敗，未知的臉孔");
         }
     }
 
@@ -520,13 +614,11 @@
         document.querySelectorAll('.menu-sub-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.sub-view').forEach(view => view.classList.remove('active'));
 
-        // 啟動對應按鈕與視圖
         const targetBtn = document.getElementById(`btn-sub-${tabId}`);
         const targetView = document.getElementById(`sub-${tabId}`);
         if(targetBtn) targetBtn.classList.add('active');
         if(targetView) targetView.classList.add('active');
 
-        // 特殊分頁初始化
         if (tabId === 'face-enroll') {
             startEnrollWebcam();
         } else {
@@ -541,11 +633,11 @@
             document.getElementById('update-name').value = sessionStorage.getItem('current_user_name') || '';
             document.getElementById('update-grade').value = sessionStorage.getItem('current_user_grade') || '';
             document.getElementById('update-class').value = sessionStorage.getItem('current_user_class') || '';
+            document.getElementById('update-gender').value = sessionStorage.getItem('current_user_gender') || 'M';
             document.getElementById('profile-msg-box').innerText = '';
         }
     }
 
-    // 🔒 密碼強度檢查
     function validatePasswordStrength(pwd) {
         if (!pwd) return true;
         return pwd.length >= 6 && /[a-z]/.test(pwd) && /[A-Z]/.test(pwd) && /[0-9]/.test(pwd);
@@ -609,7 +701,7 @@
         }
     }
 
-    // 處理登入
+    // 處理密碼登入
     async function handleLogin(e) {
         e.preventDefault();
         const studentId = document.getElementById('login-student-id').value.trim();
@@ -638,7 +730,7 @@
 
             const name = data.name || studentId;
             const role = data.role || 'student';
-            saveSession(studentId, name, role, data.grade || '', data.class_name || '', data.gender || '');
+            saveSession(studentId, name, role, data.grade || '', data.class_name || '', data.gender || 'M');
             setTimeout(() => showMenuView(studentId, name, role), 800);
 
         } catch (err) {
@@ -647,13 +739,14 @@
         }
     }
 
-    // 更新個人資料
+    // 更新個人資料（包含性別、班級、班別）
     async function handleUpdateProfile(e) {
         e.preventDefault();
         const studentId = sessionStorage.getItem('current_user_id');
         const newName = document.getElementById('update-name').value.trim();
         const newGrade = document.getElementById('update-grade').value.trim();
         const newClass = document.getElementById('update-class').value.trim();
+        const newGender = document.getElementById('update-gender').value;
         const oldPwd = document.getElementById('update-old-pwd').value.trim();
         const newPwd = document.getElementById('update-new-pwd-1').value.trim();
         const pBox = document.getElementById('profile-msg-box');
@@ -669,7 +762,7 @@
                 return;
             }
 
-            let payload = { name: newName, grade: newGrade, class_name: newClass };
+            let payload = { name: newName, grade: newGrade, class_name: newClass, gender: newGender };
             if (newPwd) {
                 if (!validatePasswordStrength(newPwd)) {
                     pBox.style.color = '#f44336';
@@ -685,6 +778,7 @@
             sessionStorage.setItem('current_user_name', newName);
             sessionStorage.setItem('current_user_grade', newGrade);
             sessionStorage.setItem('current_user_class', newClass);
+            sessionStorage.setItem('current_user_gender', newGender);
             document.getElementById('user-display-name').innerText = newName;
 
             pBox.style.color = '#4caf50';
@@ -697,24 +791,21 @@
         }
     }
 
-    // Session 儲存
     function saveSession(id, name, role, grade, className, gender) {
         sessionStorage.setItem('current_user_id', id);
         sessionStorage.setItem('current_user_name', name);
         sessionStorage.setItem('current_user_role', role);
         sessionStorage.setItem('current_user_grade', grade || '');
         sessionStorage.setItem('current_user_class', className || '');
-        sessionStorage.setItem('current_user_gender', gender || '');
+        sessionStorage.setItem('current_user_gender', gender || 'M');
     }
 
-    // 顯示主選單與動態生成導覽列
     function showMenuView(id, name, role) {
         document.getElementById('auth-view').style.display = 'none';
         document.getElementById('menu-view').style.display = 'flex';
         document.getElementById('user-display-name').innerText = name;
         document.getElementById('user-role-badge').innerText = role === 'teacher' ? '老師' : '學生';
 
-        // 動態生成 Sub Tabs 導覽列
         const tabsContainer = document.getElementById('menu-sub-tabs-container');
         let tabsHTML = `
             <button class="menu-sub-btn active" id="btn-sub-exercises" onclick="switchMenuTab('exercises')">🎯 挑戰項目</button>
@@ -732,10 +823,10 @@
         switchMenuTab('exercises');
     }
 
-    // 登出
     function handleLogout() {
         sessionStorage.clear();
         stopEnrollWebcam();
+        stopLoginWebcam();
         document.getElementById('menu-view').style.display = 'none';
         document.getElementById('auth-view').style.display = 'block';
         document.getElementById('login-form').reset();
@@ -744,14 +835,13 @@
         switchAuthTab('login');
     }
 
-    // 導向測驗頁面
     function navigateToExercise(pageUrl) {
         const studentId = sessionStorage.getItem('current_user_id');
         if (!studentId) { alert('請先登入！'); return; }
         window.open(`${pageUrl}?user_id=${encodeURIComponent(studentId)}`, '_blank');
     }
 
-    // --- 📷 多角度人臉登記邏輯 ---
+    // --- 📷 多角度人臉登記 (加入語音導航 & 覆蓋舊記錄) ---
     async function startEnrollWebcam() {
         const video = document.getElementById('enroll-webcam');
         try {
@@ -778,31 +868,36 @@
 
         let multiEncodings = {};
         const steps = [
-            { key: 'front', prompt: '請正視鏡頭，3秒後擷取正面...' },
-            { key: 'left', prompt: '請將頭部微微轉向右側 (左臉面向鏡頭)，3秒後擷取...' },
-            { key: 'right', prompt: '請將頭部微微轉向左側 (右臉面向鏡頭)，3秒後擷取...' }
+            { key: 'front', prompt: '請正視鏡頭，保持不動...', speech: '請正視鏡頭，準備擷取正面' },
+            { key: 'left', prompt: '請將頭部微微轉向右側 (左臉面向鏡頭)...', speech: '請將頭轉向右邊，左臉面向鏡頭' },
+            { key: 'right', prompt: '請將頭部微微轉向左側 (右臉面向鏡頭)...', speech: '請將頭轉向左邊，右臉面向鏡頭' }
         ];
 
         for (let step of steps) {
             statusEl.innerText = step.prompt;
-            await new Promise(r => setTimeout(r, 3000));
+            speak(step.speech);
+            await new Promise(r => setTimeout(r, 3500)); // 等待 3.5 秒讓用家轉頭
 
-            statusEl.innerText = '正在擷取人臉特徵...';
+            statusEl.innerText = '正在擷取特徵...';
             const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
             
             if (!detection) {
                 alert('未偵測到清晰人臉，請調整位置後重新登記！');
                 statusEl.innerText = '❌ 登記中斷：未偵測到人臉';
+                speak('未偵測到人臉，請重新登記');
                 return;
             }
 
             multiEncodings[step.key] = Array.from(detection.descriptor);
             statusEl.innerText = `✅ ${step.key} 面向特徵擷取成功！`;
+            speak('抓取成功');
             await new Promise(r => setTimeout(r, 1000));
         }
 
-        statusEl.innerText = '⏳ 正在將多角度特徵寫入 Supabase...';
+        statusEl.innerText = '⏳ 正在將新特徵覆蓋寫入 Supabase...';
+        speak('正在更新雲端記錄');
         try {
+            // 直接覆蓋/更新 face_encoding (會蓋掉舊記錄)
             const { error } = await supabaseClient
                 .from('students_db')
                 .update({ face_encoding: multiEncodings })
@@ -811,7 +906,8 @@
             if (error) throw error;
 
             statusEl.style.color = '#2e7d32';
-            statusEl.innerText = '🎉 恭喜！多角度人臉特徵已成功更新，可用於 everycone_cam 辨識！';
+            statusEl.innerText = '🎉 恭喜！多角度人臉登記完成，舊記錄已成功更新！';
+            speak('人臉登記成功，舊記錄已更新');
             alert('人臉登記成功！');
         } catch (err) {
             statusEl.style.color = '#c62828';
@@ -822,10 +918,9 @@
     // --- 📋 老師端：過往成績載入與篩選、CSV 匯出 ---
     async function loadTeacherRecordsData() {
         const tbody = document.getElementById('teacher-records-tbody');
-        tbody.innerHTML = `<tr><td colspan="5">載入數據中...</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6">載入數據中...</td></tr>`;
 
         try {
-            // 平行讀取學生資料與成績
             const [resStudents, resRecords] = await Promise.all([
                 supabaseClient.from('students_db').select('*'),
                 supabaseClient.from('fitness_records').select('*').order('created_at', { ascending: false })
@@ -839,7 +934,7 @@
 
             filterAndRenderRecords();
         } catch (err) {
-            tbody.innerHTML = `<tr><td colspan="5" style="color:red;">載入失敗: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" style="color:red;">載入失敗: ${err.message}</td></tr>`;
         }
     }
 
@@ -852,7 +947,6 @@
         const nameFilter = document.getElementById('filter-name').value.trim().toLowerCase();
         const genderFilter = document.getElementById('filter-gender').value;
 
-        // 建立學生對照表
         const studentMap = {};
         allGlobalStudents.forEach(s => { studentMap[s.student_id] = s; });
 
@@ -861,45 +955,35 @@
         const filtered = allGlobalRecords.filter(row => {
             const student = studentMap[row.student_id] || { name: row.student_id, grade: '', class_name: '', gender: '' };
 
-            // 1. 項目篩選
             if (catFilter && row.category !== catFilter) return false;
-
-            // 2. 時間範圍篩選
             if (timeFilter !== 'all') {
-                const rowDate = new Date(row.created_at);
-                const diffDays = (now - rowDate) / (1000 * 60 * 60 * 24);
+                const diffDays = (now - new Date(row.created_at)) / (1000 * 60 * 60 * 24);
                 if (diffDays > parseFloat(timeFilter)) return false;
             }
-
-            // 3. 級別篩選
             if (gradeFilter && !(student.grade || '').toLowerCase().includes(gradeFilter)) return false;
-
-            // 4. 班別篩選
             if (classFilter && !(student.class_name || '').toLowerCase().includes(classFilter)) return false;
-
-            // 5. 姓名/ID 篩選
             if (nameFilter && !student.name.toLowerCase().includes(nameFilter) && !row.student_id.toLowerCase().includes(nameFilter)) return false;
-
-            // 6. 性別篩選
             if (genderFilter && student.gender !== genderFilter) return false;
 
             return true;
         });
 
         if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" style="color:#777;">沒有符合條件的記錄</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" style="color:#777;">沒有符合條件的記錄</td></tr>`;
             return;
         }
 
         let html = '';
         filtered.forEach(row => {
-            const student = studentMap[row.student_id] || { name: row.student_id, grade: '-', class_name: '-' };
+            const student = studentMap[row.student_id] || { name: row.student_id, grade: '-', class_name: '-', gender: '-' };
             const timeStr = new Date(row.created_at).toLocaleString('zh-HK', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+            const genderText = student.gender === 'F' ? '女' : (student.gender === 'M' ? '男' : '-');
             html += `
                 <tr>
                     <td>${timeStr}</td>
                     <td><b>${student.name}</b><br><span style="font-size:0.65rem; color:#888;">(${row.student_id})</span></td>
                     <td>${student.grade || '-'} / ${student.class_name || '-'}</td>
+                    <td>${genderText}</td>
                     <td>${row.category}</td>
                     <td><b style="color:#ec407a;">${row.score_value}</b></td>
                 </tr>
@@ -915,13 +999,6 @@
 
         let csvContent = "\uFEFF" + "時間,學生姓名,學號,級別,班別,性別,測試項目,成績\n";
 
-        const tbodyRows = document.querySelectorAll('#teacher-records-tbody tr');
-        if (tbodyRows.length === 0 || tbodyRows[0].innerText.includes('載入') || tbodyRows[0].innerText.includes('沒有')) {
-            alert('目前沒有可匯出的數據！');
-            return;
-        }
-
-        // 根據當前畫面的篩選結果進行匯出
         const catFilter = document.getElementById('filter-category').value;
         const timeFilter = document.getElementById('filter-time').value;
         const gradeFilter = document.getElementById('filter-grade').value.trim().toLowerCase();
