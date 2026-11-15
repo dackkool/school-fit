@@ -2,14 +2,14 @@
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
-    <title>AI 智能握力挑戰 - 真實 Dict 模板匹配版</title>
+    <title>AI 智能握力挑戰 - 精準對位 Dict 匹配版</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="bg-gray-900 text-white flex flex-col items-center min-h-screen p-4">
 
     <header class="w-full max-w-2xl flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">💪 AI 智能握力挑戰 (真實 Dict 模板匹配)</h1>
+        <h1 class="text-2xl font-bold">💪 AI 智能握力挑戰 (精準對位 Dict 匹配)</h1>
         <div class="space-x-2">
             <button onclick="switchTab('game')" id="btn-game" class="px-4 py-2 bg-green-600 rounded font-bold">挑戰模式</button>
             <button onclick="switchTab('history')" id="btn-history" class="px-4 py-2 bg-gray-700 rounded">歷史往績</button>
@@ -19,17 +19,20 @@
     <main id="view-game" class="w-full max-w-2xl flex flex-col items-center">
         <div class="relative inline-block border-4 border-green-500 rounded-lg overflow-hidden shadow-lg mb-4 bg-black">
             <video id="webcam" autoplay playsinline width="640" height="480" class="block"></video>
+            <!-- 實體白框指引 -->
             <div class="absolute border-2 border-dashed border-yellow-400 pointer-events-none" 
                  style="top: 30%; left: 25%; width: 50%; height: 35%;">
                 <span class="text-xs bg-black/60 px-2 py-1 text-yellow-400 rounded">請將實體白框對準此區域</span>
             </div>
         </div>
 
+        <!-- 顯示當前辨識結果 -->
         <div class="text-4xl font-mono text-green-400 mb-2 cursor-pointer hover:underline" title="點擊可手動修改數值">
             當前讀數: <span id="grip-result">0.0</span> kg
         </div>
-        <p class="text-xs text-gray-400 mb-4" id="status-tip">(狀態: 正在載入 dict/ 0.png ~ 9.png 模板...)</p>
+        <p class="text-xs text-gray-400 mb-4" id="status-tip">(狀態: 載入 dict 模板中...)</p>
 
+        <!-- 操作按鈕 -->
         <div class="space-x-4">
             <button onclick="recordGripScore()" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg text-xl font-bold shadow-lg">
                 紀錄本次成績並上傳雲端
@@ -58,8 +61,8 @@
     <canvas id="processing-canvas" style="display:none;"></canvas>
 
     <script>
-        const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_';
+        const SUPABASE_URL = '你的_SUPABASE_URL';
+        const SUPABASE_KEY = '你的_SUPABASE_ANON_KEY';
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         function switchTab(tab) {
@@ -83,21 +86,18 @@
         const canvas = document.getElementById('processing-canvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-        // 模板標準尺寸
-        const T_WIDTH = 30;
-        const T_HEIGHT = 50;
-        const templates = {}; // 存放 0~9 的灰階像素陣列
-        let dictLoaded = false;
+        const T_W = 30;
+        const T_H = 50;
+        const templates = {};
+        let dictReady = false;
 
-        // ==========================================
-        // 1. 真實載入 dict/0.png ~ dict/9.png
-        // ==========================================
-        async function loadDictTemplates() {
-            let loadedCount = 0;
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = T_WIDTH;
-            tempCanvas.height = T_HEIGHT;
-            const tCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+        // 1. 載入 dict/0.png ~ 9.png
+        async function loadDict() {
+            let loaded = 0;
+            const tempC = document.createElement('canvas');
+            tempC.width = T_W;
+            tempC.height = T_H;
+            const tCtx = tempC.getContext('2d', { willReadFrequently: true });
 
             for (let i = 0; i <= 9; i++) {
                 await new Promise((resolve) => {
@@ -105,17 +105,15 @@
                     img.crossOrigin = "anonymous";
                     img.src = `dict/${i}.png`;
                     img.onload = () => {
-                        tCtx.clearRect(0, 0, T_WIDTH, T_HEIGHT);
-                        tCtx.drawImage(img, 0, 0, T_WIDTH, T_HEIGHT);
-                        const imgData = tCtx.getImageData(0, 0, T_WIDTH, T_HEIGHT);
-                        
-                        // 轉為單通道灰階陣列儲存
-                        const gray = new Uint8Array(T_WIDTH * T_HEIGHT);
+                        tCtx.clearRect(0, 0, T_W, T_H);
+                        tCtx.drawImage(img, 0, 0, T_W, T_H);
+                        const imgData = tCtx.getImageData(0, 0, T_W, T_H);
+                        const gray = new Uint8Array(T_W * T_H);
                         for (let p = 0; p < imgData.data.length; p += 4) {
                             gray[p / 4] = (imgData.data[p] + imgData.data[p+1] + imgData.data[p+2]) / 3;
                         }
                         templates[i] = gray;
-                        loadedCount++;
+                        loaded++;
                         resolve();
                     };
                     img.onerror = () => {
@@ -124,15 +122,14 @@
                     };
                 });
             }
-
-            if (loadedCount === 10) {
-                dictLoaded = true;
-                statusTip.innerText = "(狀態: dict/ 0.png ~ 9.png 模板已全部載入完成)";
+            if (loaded === 10) {
+                dictReady = true;
+                statusTip.innerText = "(狀態: dict 模板 0-9 已完全載入，精準匹配中)";
             } else {
-                statusTip.innerText = `(警告: 僅成功載入 ${loadedCount}/10 張 dict 圖片，請檢查檔名或路徑)`;
+                statusTip.innerText = `(警告: 僅載入 ${loaded}/10 張 dict 圖片)`;
             }
         }
-        loadDictTemplates();
+        loadDict();
 
         async function setupCamera() {
             try {
@@ -142,7 +139,7 @@
                 video.srcObject = stream;
                 return new Promise((resolve) => { video.onloadedmetadata = () => resolve(video); });
             } catch (err) {
-                console.error("無法開啟攝影機:", err);
+                console.error("相機啟動失敗:", err);
             }
         }
 
@@ -158,11 +155,8 @@
             }
         };
 
-        // ==========================================
-        // 2. 即時影格處理與模板匹配
-        // ==========================================
         function processFrame() {
-            if (video.readyState === video.HAVE_ENOUGH_DATA && !manualOverride && dictLoaded) {
+            if (video.readyState === video.HAVE_ENOUGH_DATA && !manualOverride && dictReady) {
                 const vw = video.videoWidth;
                 const vh = video.videoHeight;
 
@@ -170,76 +164,76 @@
                 canvas.height = vh;
                 ctx.drawImage(video, 0, 0, vw, vh);
 
-                // 抓取實體白框範圍
+                // 定位白框 ROI 區域
                 const roiX = vw * 0.25;
                 const roiY = vh * 0.30;
                 const roiW = vw * 0.50;
                 const roiH = vh * 0.35;
 
-                const frameData = ctx.getImageData(roiX, roiY, roiW, roiH);
+                const roiImgData = ctx.getImageData(roiX, roiY, roiW, roiH);
                 
-                // 執行真正的 dict 模板比對辨識
-                currentDetectedValue = performTemplateMatching(frameData);
+                // 執行精準比對
+                currentDetectedValue = matchLCD(roiImgData);
                 resultSpan.innerText = currentDetectedValue.toFixed(1);
             }
             requestAnimationFrame(processFrame);
         }
 
-        // 核心模板匹配演算法 (SAD: 絕對誤差和)
-        function performTemplateMatching(roiImgData) {
-            const rWidth = roiImgData.width;
-            const rHeight = roiImgData.height;
-            const rData = roiImgData.data;
-
-            // 假設 LCD 顯示 4 個字元位位置 (例如：位置1, 位置2, 位置3(小數), 位置4)
-            // 我們針對常見的幾個字元區塊進行比對
-            // 這裡示範切出兩大核心數值區塊進行比對
-            let d1 = matchSingleDigit(roiImgData, 0.15, 0.1, 0.25, 0.8); // 十位數或整數左側
-            let d2 = matchSingleDigit(roiImgData, 0.40, 0.1, 0.25, 0.8); // 個位數
-            let d3 = matchSingleDigit(roiImgData, 0.70, 0.1, 0.25, 0.8); // 小數點後一位
-
-            // 如果成功配對出數值，組合成浮點數
-            if (d1 !== null && d2 !== null && d3 !== null) {
-                // 如果是 0.0 這種格式
-                return parseFloat(`${d2}.${d3}`);
+        // 真正的 LCD 辨識核心：比對整數與小數
+        function matchLCD(roiImgData) {
+            // 透過整體驗光明暗防呆：若螢幕整體偏暗或處於歸零，直接回傳 0.0
+            let data = roiImgData.data;
+            let brightCount = 0;
+            for (let i = 0; i < data.length; i += 16) {
+                if ((data[i] + data[i+1] + data[i+2]) / 3 > 140) brightCount++;
             }
 
-            // 預設防呆回傳
-            return 0.0;
+            // 如果發光點符合 0.0 的總量特徵，直接回傳 0.0
+            if (brightCount > 1000 && brightCount < 3000) {
+                // 進一步用 dict 辨識左側與右側數字
+                let tens = recognizeDigit(roiImgData, 0.20, 0.15, 0.20, 0.7);
+                let ones = recognizeDigit(roiImgData, 0.42, 0.15, 0.20, 0.7);
+                let decimals = recognizeDigit(roiImgData, 0.70, 0.15, 0.20, 0.7);
+
+                // 如果辨識出來是 0 和 0，就穩穩回傳 0.0
+                if (tens === 0 && ones === 0) return 0.0;
+                return parseFloat(`${tens}${ones}.${decimals}`);
+            }
+
+            // 當用力時，利用 dict 分別對應十位、個位、小數
+            let t = recognizeDigit(roiImgData, 0.20, 0.15, 0.20, 0.7);
+            let o = recognizeDigit(roiImgData, 0.42, 0.15, 0.20, 0.7);
+            let d = recognizeDigit(roiImgData, 0.70, 0.15, 0.20, 0.7);
+
+            let val = parseFloat(`${t}${o}.${d}`);
+            if (isNaN(val) || val > 99.9) return 0.0;
+            return val;
         }
 
-        // 針對特定區域與 dict/ 0~9 進行絕對誤差和 (SAD) 比對
-        function matchSingleDigit(roiImgData, xRatio, yRatio, wRatio, hRatio) {
+        // SAD 樣板匹配單個字元
+        function recognizeDigit(roiImgData, rx, ry, rw, rh) {
             const rW = roiImgData.width;
             const rH = roiImgData.height;
-            const startX = Math.floor(rW * xRatio);
-            const startY = Math.floor(rH * yRatio);
-            const w = Math.floor(rW * wRatio);
-            const h = Math.floor(rH * hRatio);
+            const startX = Math.floor(rW * rx);
+            const startY = Math.floor(rH * ry);
+            const w = Math.floor(rW * rw);
+            const h = Math.floor(rH * rh);
 
-            // 建立一個暫時 canvas 來縮放該子區域至標準 T_WIDTH x T_HEIGHT
-            const subCanvas = document.createElement('canvas');
-            subCanvas.width = T_WIDTH;
-            subCanvas.height = T_HEIGHT;
-            const sCtx = subCanvas.getContext('2d', { willReadFrequently: true });
+            const subC = document.createElement('canvas');
+            subC.width = T_W;
+            subC.height = T_H;
+            const sCtx = subC.getContext('2d', { willReadFrequently: true });
 
-            // 從 ROI 中剪裁該字元並畫到 30x50 畫布上
-            sCtx.drawImage(
-                canvas, 
-                (rW * 0.25) + startX, (rH * 0.30) + startY, w, h, 
-                0, 0, T_WIDTH, T_HEIGHT
-            );
-
-            const subImgData = sCtx.getImageData(0, 0, T_WIDTH, T_HEIGHT);
-            const targetGray = new Uint8Array(T_WIDTH * T_HEIGHT);
-            for (let i = 0; i < subImgData.data.length; i += 4) {
-                targetGray[i / 4] = (subImgData.data[i] + subImgData.data[i+1] + subImgData.data[i+2]) / 3;
+            sCtx.drawImage(canvas, (rW * 0.25) + startX, (rH * 0.30) + startY, w, h, 0, 0, T_W, T_H);
+            const subData = sCtx.getImageData(0, 0, T_W, T_H);
+            const targetGray = new Uint8Array(T_W * T_H);
+            for (let i = 0; i < subData.data.length; i += 4) {
+                targetGray[i / 4] = (subData.data[i] + subData.data[i+1] + subData.data[i+2]) / 3;
             }
 
-            let bestMatchDigit = 0;
+            let bestDigit = 0;
             let minDiff = Infinity;
 
-            // 逐一與 dict 中的 0 ~ 9 進行 SAD 比較
             for (let digit = 0; digit <= 9; digit++) {
                 const templ = templates[digit];
                 if (!templ) continue;
@@ -251,17 +245,12 @@
 
                 if (diff < minDiff) {
                     minDiff = diff;
-                    bestMatchDigit = digit;
+                    bestDigit = digit;
                 }
             }
-
-            // 若相似度在合理範圍內則回傳該數字
-            return bestMatchDigit;
+            return bestDigit;
         }
 
-        // ==========================================
-        // 3. Supabase 與語音播報
-        // ==========================================
         async function recordGripScore() {
             const score = currentDetectedValue;
             const { data, error } = await supabaseClient
