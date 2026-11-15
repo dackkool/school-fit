@@ -17,7 +17,7 @@ body{background-color:var(--bg-dark);color:var(--text-main);display:flex;justify
 .tabs{display:flex;border-bottom:1px solid var(--border-color)}.tab-btn{flex:1;background:none;border:none;color:var(--text-muted);padding:10px;font-size:0.95rem;font-weight:700;cursor:pointer;border-bottom:3px solid transparent}.tab-btn.active{color:var(--accent-orange);border-bottom-color:var(--accent-orange)}
 .student-bar{background:var(--card-bg);border:1px solid var(--border-color);padding:10px;border-radius:10px;display:flex;justify-content:space-between;align-items:center}
 .video-wrap{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:12px;overflow:hidden;border:2px solid var(--accent-orange)}
-#video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} #overlayCanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#video{width:100%;height:100%;object-fit:cover;transform:none} #overlayCanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .roi-box{position:absolute;border:2px dashed #10b981;background:rgba(16,185,129,0.12);pointer-events:none;display:flex;align-items:flex-start;justify-content:center}
 .roi-label{font-size:10px;background:#10b981;color:#000;padding:2px 6px;border-radius:0 0 6px 6px;font-weight:800}
 .stat-row{display:flex;gap:8px}.stat-card{flex:1;background:var(--card-bg);border:1px solid var(--border-color);padding:10px;border-radius:10px;text-align:center}
@@ -63,10 +63,10 @@ const SUPABASE_ANON_KEY='sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const MODEL_PATH='./models/best.onnx';
 const INPUT_SIZE=640;
-const CONF_THRESHOLD=0.45; // 改高少少，過濾上面細字
-const IOU_THRESHOLD=0.35;
+const CONF_THRESHOLD=0.25; // 改高少少，過濾上面細字
+const IOU_THRESHOLD=0.5;
 // 重點：縮細淨係捉下面大 LCD，你張圖就係因為框太大
-const ROI={x:0.35, y:0.42, w:0.34, h:0.20};
+const ROI={x:0.35, y:0.40, w:0.36, h:0.22};
 let ortSession=null, poseInstance=null, isProcessing=false, currentStream=null;
 let currentHand='right', attempts={right:[],left:[]}, stableBuffer=[], latestValidKg=null, poseStatusText='姿勢標準';
 
@@ -261,5 +261,3 @@ function switchTab(tab){ document.querySelectorAll('.tab-btn').forEach((b,i)=>{b
 </body>
 </html>
 
-
-你 push 完話我知條 link，我幫你睇埋 console 有冇報錯。
