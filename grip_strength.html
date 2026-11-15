@@ -54,9 +54,9 @@ const supabaseClient = (SUPABASE_URL.includes('your-project')) ? null : supabase
 
 const MODEL_PATH='./models/best.onnx';
 const INPUT_SIZE=640;
-const CONF_THRESHOLD=0.25; // 你個 11MB n版，0.45太高，0.25先啱
 const IOU_THRESHOLD=0.45;
-const ROI={x:0.35, y:0.50, w:0.40, h:0.22}; // 淨係捉下面大字，避開上面細字 00
+const CONF_THRESHOLD=0.15; // 0.25太高，你張圖藍字太淡
+const ROI={x:0.28, y:0.38, w:0.50, h:0.30}; // 放大咗，唔使對到咁辛苦
 
 let ortSession=null, poseInstance=null, isProcessing=false, currentStream=null;
 let currentHand='right', attempts={right:[],left:[]}, stableBuffer=[], latestValidKg=null, poseStatusText='姿勢標準';
