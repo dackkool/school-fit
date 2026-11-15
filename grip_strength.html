@@ -1,531 +1,559 @@
 <!DOCTYPE html>
 <html lang="zh-HK">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 左右手手握力測驗 | YOLOv8 智能辨識</title>
-    <!-- MediaPipe Pose -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <!-- Supabase JS 庫 -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- ONNX Runtime Web for YOLO -->
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 左右手手握力測驗 (YOLOv8 ONNX)</title>
+  <!-- 引入 ONNX Runtime Web -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+  <style>
+    :root {
+      --bg-dark: #141517;
+      --card-bg: #1e2024;
+      --border-color: #2e3238;
+      --accent-orange: #f59e0b;
+      --accent-green: #10b981;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang HK", "Microsoft JhengHei", sans-serif; }
+    body { background-color: var(--bg-dark); color: var(--text-main); display: flex; justify-content: center; padding: 16px; min-height: 100vh; }
+    .app-container { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 14px; }
     
-    <style>
-        * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
-        body { margin: 0; padding: 10px; background-color: #121212; color: white; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
-        #main-card { width: 100%; max-width: 500px; background-color: #1e1e1e; border-radius: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); padding: 15px; }
-        h1 { color: #ff9800; font-size: 1.3rem; margin: 0 0 5px 0; text-align: center; }
-        .subtitle { font-size: 0.75rem; color: #aaa; margin-bottom: 10px; text-align: center; }
+    /* 標題區 */
+    .header { text-align: center; padding: 8px 0; }
+    .header h1 { color: var(--accent-orange); font-size: 1.5rem; font-weight: 800; letter-spacing: 1px; }
+    .header p { color: var(--text-muted); font-size: 0.85rem; margin-top: 4px; font-style: italic; }
 
-        .tab-header { display: flex; border-bottom: 2px solid #333; margin-bottom: 10px; }
-        .tab-btn { flex: 1; padding: 8px; background: none; border: none; font-size: 0.9rem; font-weight: bold; color: #777; cursor: pointer; transition: 0.2s; }
-        .tab-btn.active { color: #ff9800; border-bottom: 3.5px solid #ff9800; }
-        .tab-content { display: none; flex-direction: column; }
-        .tab-content.active { display: flex; }
+    /* 分頁標籤 */
+    .tabs { display: flex; border-bottom: 1px solid var(--border-color); }
+    .tab-btn { flex: 1; background: none; border: none; color: var(--text-muted); padding: 12px; font-size: 1rem; font-weight: 700; cursor: pointer; border-bottom: 3px solid transparent; transition: 0.2s; }
+    .tab-btn.active { color: var(--accent-orange); border-bottom-color: var(--accent-orange); }
 
-        .user-info-banner { background: #2a2a2a; border: 1px solid #ff9800; padding: 10px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; }
-        .user-info-banner span { color: #ff9800; font-weight: bold; }
+    /* 學生列 */
+    .student-bar { background: var(--card-bg); border: 1px solid var(--accent-orange); border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+    .student-info { font-weight: 700; font-size: 1rem; }
+    .student-info input { background: #111; border: 1px solid var(--border-color); color: var(--accent-orange); font-weight: 800; padding: 4px 8px; border-radius: 6px; width: 100px; font-size: 1rem; }
+    .btn-sm { background: #2b2f36; color: var(--text-main); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
 
-        .camera-select-group { margin-bottom: 8px; }
-        .camera-select-group label { font-size: 0.8rem; color: #4caf50; font-weight: bold; display: block; margin-bottom: 3px; }
-        .camera-select-group select { width: 100%; padding: 6px; font-size: 0.9rem; border-radius: 8px; border: 1.5px solid #4caf50; background: #2a2a2a; color: white; }
+    /* 鏡頭選擇 */
+    .camera-select-group { display: flex; flex-direction: column; gap: 6px; }
+    .camera-select-group label { color: var(--accent-green); font-size: 0.9rem; font-weight: 700; }
+    select { background: var(--card-bg); color: var(--text-main); border: 1px solid var(--accent-green); padding: 10px 12px; border-radius: 8px; font-size: 0.95rem; outline: none; }
 
-        .video-wrapper { position: relative; width: 100%; height: 260px; border-radius: 12px; overflow: hidden; border: 2.5px solid #ff9800; background: #000; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
-        
-        video { width: 100%; height: 100%; object-fit: cover; }
-        canvas#output-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+    /* 視訊與偵測畫布區 */
+    .viewport-wrapper { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #000; border: 2px solid var(--accent-orange); border-radius: 12px; overflow: hidden; }
+    video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    canvas#overlayCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    
+    /* 綠色對準框 */
+    .guide-box { position: absolute; top: 18%; left: 16%; width: 68%; height: 64%; border: 2px dashed var(--accent-green); border-radius: 12px; pointer-events: none; display: flex; justify-content: center; }
+    .guide-label { background: var(--accent-green); color: #000; font-weight: 800; font-size: 0.78rem; padding: 2px 10px; border-radius: 0 0 8px 8px; height: fit-content; }
 
-        .roi-guide-box {
-            position: absolute;
-            top: 20%;
-            left: 15%;
-            width: 70%;
-            height: 55%;
-            border: 3px dashed #00e676;
-            border-radius: 10px;
-            pointer-events: none;
-            box-shadow: 0 0 15px rgba(0, 230, 118, 0.4);
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            z-index: 10;
-        }
-        .roi-label { background: rgba(0,230,118,0.9); color: black; font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 0 0 6px 6px; }
+    /* 數據面板 */
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .stat-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 8px; text-align: center; }
+    .stat-title { color: var(--text-muted); font-size: 0.78rem; margin-bottom: 6px; }
+    .stat-val { font-size: 1.25rem; font-weight: 800; }
+    .stat-val.green { color: var(--accent-green); }
+    .stat-val.orange { color: var(--accent-orange); }
 
-        .hud-panel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
-        .hud-card { background: #2a2a2a; border-radius: 10px; padding: 6px; text-align: center; border: 1px solid #444; }
-        .hud-title { font-size: 0.7rem; color: #aaa; }
-        .hud-value { font-size: 1.1rem; font-weight: bold; color: #ff9800; margin-top: 2px; }
+    /* 狀態提示條 */
+    .status-banner { background: #143628; border: 1px solid var(--accent-green); color: var(--accent-orange); padding: 10px; border-radius: 8px; text-align: center; font-size: 0.9rem; font-weight: 700; }
+    .status-banner.ready { color: #6ee7b7; }
 
-        #status-bar { background: rgba(255, 152, 0, 0.15); border: 1px solid #ff9800; color: #ff9800; padding: 10px; border-radius: 8px; text-align: center; font-size: 0.85rem; font-weight: bold; margin-bottom: 10px; }
+    /* 主按鈕與手部切換 */
+    .hand-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .hand-btn { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 10px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+    .hand-btn.active { border-color: var(--accent-green); background: #163026; color: var(--accent-green); }
 
-        button.btn-primary { width: 100%; padding: 12px; font-size: 1rem; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background-color: #ff9800; margin-top: 5px; }
-        button.btn-primary:hover { opacity: 0.9; }
-        button.btn-secondary { width: 100%; padding: 10px; font-size: 0.95rem; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background-color: #00e676; margin-top: 5px; }
+    .primary-btn { background: var(--accent-orange); color: #111; border: none; padding: 14px; border-radius: 10px; font-size: 1.05rem; font-weight: 800; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px; transition: 0.15s; }
+    .primary-btn:active { transform: scale(0.98); }
+    .primary-btn:disabled { background: #4b5563; color: #9ca3af; cursor: not-allowed; }
 
-        .history-container { background: #2a2a2a; border-radius: 10px; padding: 10px; max-height: 380px; overflow-y: auto; }
-        table.history-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-        table.history-table th, table.history-table td { border: 1px solid #444; padding: 6px; text-align: center; }
-        table.history-table th { background-color: #333; color: #ff9800; }
-    </style>
+    /* 歷史紀錄表格 */
+    .history-panel { display: none; flex-direction: column; gap: 12px; }
+    .history-panel.active { display: flex; }
+    .test-panel { display: flex; flex-direction: column; gap: 14px; }
+    .test-panel.hidden { display: none; }
+    table { width: 100%; border-collapse: collapse; background: var(--card-bg); border-radius: 10px; overflow: hidden; font-size: 0.88rem; }
+    th, td { padding: 10px; text-align: center; border-bottom: 1px solid var(--border-color); }
+    th { background: #262930; color: var(--accent-orange); }
+  </style>
 </head>
 <body>
-
-<div id="main-card">
-    <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">YOLOv8 AI 智慧物件偵測・0.5kg 結算</div>
-
-    <div class="tab-header">
-        <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
-        <button class="tab-btn" onclick="switchTab('history')">📋 歷史成績</button>
+  <div class="app-container">
+    <div class="header">
+      <h1>AI 左右手手握力測驗</h1>
+      <p>YOLOv8 AI 智慧物件偵測 · 0.5kg 結算</p>
     </div>
 
-    <!-- TAB 1: 測驗與辨識 -->
-    <div id="tab-challenge" class="tab-content active">
-        <div class="user-info-banner">
-            <div>當前學生：<span id="current-user-label">載入中...</span></div>
-            <button onclick="window.location.href='index.html'" style="background: #444; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; cursor: pointer;">返回</button>
-        </div>
-
-        <div class="camera-select-group">
-            <label>選擇相機鏡頭：</label>
-            <select id="camera-select" onchange="changeCamera()">
-                <option value="">載入鏡頭中...</option>
-            </select>
-        </div>
-
-        <div class="video-wrapper">
-            <video id="webcam" autoplay muted playsinline></video>
-            <canvas id="output-canvas"></canvas>
-            
-            <div class="roi-guide-box"><div class="roi-label">請將螢幕數字對準此綠框內</div></div>
-        </div>
-
-        <div class="hud-panel">
-            <div class="hud-card">
-                <div class="hud-title">當前測驗手</div>
-                <div class="hud-value" id="current-hand-label" style="color: #00e676;">右手 (第1次)</div>
-            </div>
-            <div class="hud-card">
-                <div class="hud-title">即時讀數</div>
-                <div class="hud-value" id="current-grip-display">0.0 kg</div>
-            </div>
-            <div class="hud-card">
-                <div class="hud-title">本手最佳</div>
-                <div class="hud-value" id="max-grip-display">0.0 kg</div>
-            </div>
-        </div>
-
-        <div id="status-bar">⏳ 正在初始化系統與載入 YOLO 模型...</div>
-        <div id="control-area"></div>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('test')">💪 手握力測驗</button>
+      <button class="tab-btn" onclick="switchTab('history')">📋 歷史成績</button>
     </div>
 
-    <!-- TAB 2: 歷史記錄 -->
-    <div id="tab-history" class="tab-content" style="display: none;">
-        <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 0.85rem; color: #aaa; font-weight: bold;">歷史記錄：</span>
-            <button onclick="loadHistory()" style="background: #333; color: #ff9800; border: 1px solid #ff9800; padding: 4px 10px; border-radius: 6px; cursor: pointer;">🔄 重新整理</button>
+    <!-- 測驗分頁 -->
+    <div id="testPanel" class="test-panel">
+      <div class="student-bar">
+        <div class="student-info">
+          當前學生：<input type="text" id="studentId" value="s001" />
         </div>
-        <div class="history-container">
-            <table class="history-table">
-                <thead><tr><th>日期</th><th>手別</th><th>最佳成績</th></tr></thead>
-                <tbody id="history-tbody"><tr><td colspan="3" style="color: #777; padding: 15px;">載入記錄中...</td></tr></tbody>
-            </table>
+        <button class="btn-sm" onclick="resetCurrentStudent()">重置本生數據</button>
+      </div>
+
+      <div class="camera-select-group">
+        <label for="cameraSelect">選擇相機鏡頭：</label>
+        <select id="cameraSelect"></select>
+      </div>
+
+      <div class="viewport-wrapper">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlayCanvas"></canvas>
+        <div class="guide-box">
+          <div class="guide-label">請將螢幕數字對準此綠框內</div>
         </div>
+      </div>
+
+      <!-- 左右手與次數選擇 -->
+      <div class="hand-controls">
+        <button id="btnRight" class="hand-btn active" onclick="selectHand('right')">右手測驗 (<span id="rightCount">0</span>/3)</button>
+        <button id="btnLeft" class="hand-btn" onclick="selectHand('left')">左手測驗 (<span id="leftCount">0</span>/3)</button>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-title">當前測驗手</div>
+          <div id="currentHandLabel" class="stat-val green">右手 (第1次)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">即時讀數</div>
+          <div id="liveReading" class="stat-val orange">0.0 kg</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">本手最佳</div>
+          <div id="bestReading" class="stat-val orange">0.0 kg</div>
+        </div>
+      </div>
+
+      <div id="statusBanner" class="status-banner">⏳ 正在載入 YOLOv8 模型 (models/best.onnx)...</div>
+
+      <button id="recordBtn" class="primary-btn" onclick="recordAttempt()" disabled>
+        💾 鎖定並儲存本次成績
+      </button>
     </div>
-</div>
 
-<script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    <!-- 歷史成績分頁 -->
+    <div id="historyPanel" class="history-panel">
+      <table>
+        <thead>
+          <tr>
+            <th>學生</th>
+            <th>右手最佳</th>
+            <th>左手最佳</th>
+            <th>總最佳</th>
+            <th>時間</th>
+          </tr>
+        </thead>
+        <tbody id="historyTableBody"></tbody>
+      </table>
+      <button class="btn-sm" onclick="clearHistory()">清除所有歷史紀錄</button>
+    </div>
+  </div>
 
-    let currentUserId = 'TEST_USER';
-    let pose = null, mediaStream = null;
-    let yoloSession = null;
+  <!-- 離屏 Canvas 用於裁切與縮放給 YOLO 推論 -->
+  <canvas id="procCanvas" width="640" height="640" style="display:none;"></canvas>
+
+  <script>
+    // ================= 配置參數 =================
+    const MODEL_PATH = './models/best.onnx';
+    const INPUT_SIZE = 640;
+    const CONF_THRESHOLD = 0.45; // 信心度門檻 (若光線暗可調低至 0.35)
+    const IOU_THRESHOLD = 0.45;  // NMS 重疊過濾門檻
+
+    // 綠框在畫面中的比例 (與 CSS .guide-box 對應)
+    const ROI = { x: 0.16, y: 0.18, w: 0.68, h: 0.64 };
+
+    // ================= 狀態變數 =================
+    let ortSession = null;
+    let isInferencing = false;
+    let currentStream = null;
+    let currentHand = 'right'; // 'right' | 'left'
+    let attempts = { right: [], left: [] };
     
-    let currentHand = 'right';
-    let currentAttempt = 1;
-    let rightAttempts = [];
-    let leftAttempts = [];
-    let state = 'IDLE';
-    
-    let maxGripScore = 0.0;
-    let latestOcrValue = 0.0;
-    let isProcessing = false;
-    let countdownTimer = null, testTimer = null;
+    let stableBuffer = [];
+    let latestValidKg = null;
 
+    const video = document.getElementById('video');
+    const overlayCanvas = document.getElementById('overlayCanvas');
+    const overlayCtx = overlayCanvas.getContext('2d');
+    const procCanvas = document.getElementById('procCanvas');
+    const procCtx = procCanvas.getContext('2d', { willReadFrequently: true });
+
+    // ================= 初始化 =================
     window.addEventListener('DOMContentLoaded', async () => {
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('user_id')) currentUserId = urlParams.get('user_id');
-        document.getElementById('current-user-label').innerText = currentUserId;
-
-        await startWebcam();
-        await initCameraDevices();
-        initMediaPipePose();
-        
-        await loadYoloModel();
-        matchLoop();
+      await initCameras();
+      await loadYoloModel();
+      renderHistory();
+      requestAnimationFrame(inferenceLoop);
     });
 
-    function switchTab(tabName) {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => { c.classList.remove('active'); c.style.display = 'none'; });
-        const tabs = { 'challenge': 0, 'history': 1 };
-        document.querySelectorAll('.tab-btn')[tabs[tabName]].classList.add('active');
-        const target = document.getElementById(`tab-${tabName}`);
-        target.classList.add('active');
-        target.style.display = 'flex';
-        if (tabName === 'history') loadHistory();
-    }
-
-    async function initCameraDevices() {
-        const cameraSelect = document.getElementById('camera-select');
-        try {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            cameraSelect.innerHTML = '';
-            devices.filter(d => d.kind === 'videoinput').forEach((device, index) => {
-                const opt = document.createElement('option');
-                opt.value = device.deviceId;
-                opt.text = device.label || `鏡頭 ${index + 1}`;
-                cameraSelect.appendChild(opt);
-            });
-        } catch (e) {}
-    }
-
-    async function startWebcam(deviceId = null) {
-        const videoElement = document.getElementById('webcam');
-        if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
-        try {
-            mediaStream = await navigator.mediaDevices.getUserMedia({
-                video: deviceId ? { deviceId: { exact: deviceId } } : { width: { ideal: 640 }, height: { ideal: 480 } },
-                audio: false
-            });
-            videoElement.srcObject = mediaStream;
-            await videoElement.play();
-        } catch (err) {
-            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！請確認使用 Live Server 運行。";
-        }
-    }
-
-    async function changeCamera() { await startWebcam(document.getElementById('camera-select').value); }
-
+    // 1. 載入 ONNX 模型
     async function loadYoloModel() {
-        try {
-            document.getElementById('status-bar').innerText = "⏳ 正在載入 YOLOv8 AI 模型 (models/best.onnx)...";
-            // 載入放在 models/ 資料夾下的 ONNX 模型
-            yoloSession = await ort.InferenceSession.create('models/best.onnx', { executionProviders: ['wasm'] });
-            document.getElementById('status-bar').innerText = "✅ YOLO 模型載入成功！點擊下方按鈕開始";
-            showStartButton("🚀 開始右手第 1 次測驗");
-            speak("系統就緒，請準備進行右手測驗");
-        } catch (e) {
-            console.error("YOLO 載入失敗:", e);
-            document.getElementById('status-bar').innerText = "⚠️ 無法載入 models/best.onnx 模型！請確認檔案路徑與 Live Server。";
-        }
+      const banner = document.getElementById('statusBanner');
+      try {
+        // 設定 WASM 路徑確保單檔免配置可運行
+        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
+        ortSession = await ort.InferenceSession.create(MODEL_PATH, {
+          executionProviders: ['wasm']
+        });
+        banner.textContent = '✅ AI 模型已就緒！請將螢幕數字對準綠框';
+        banner.classList.add('ready');
+        speak('系統已就緒，請開始測驗');
+      } catch (err) {
+        console.error('ONNX 載入失敗:', err);
+        banner.innerHTML = `❌ 無法載入 ${MODEL_PATH}<br><small>請確認檔案路徑並透過 Local Server 開啟網頁</small>`;
+      }
     }
 
-    function initMediaPipePose() {
-        const videoElement = document.getElementById('webcam');
-        const canvasElement = document.getElementById('output-canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-        pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
-        pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.3, minTrackingConfidence: 0.3 });
+    // 2. 初始化攝影機列表
+    async function initCameras() {
+      const select = document.getElementById('cameraSelect');
+      try {
+        await navigator.mediaDevices.getUserMedia({ video: true });
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
         
-        pose.onResults((results) => {
-            if (!videoElement.videoWidth) return;
-            canvasElement.width = videoElement.videoWidth;
-            canvasElement.height = videoElement.videoHeight;
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            if (results.poseLandmarks) {
-                drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00e676', lineWidth: 2 });
-            }
-            canvasCtx.restore();
+        select.innerHTML = '';
+        videoDevices.forEach((device, idx) => {
+          const opt = document.createElement('option');
+          opt.value = device.deviceId;
+          opt.text = device.label || `相機鏡頭 ${idx + 1}`;
+          select.appendChild(opt);
         });
 
-        async function poseLoop() {
-            if (videoElement.readyState >= 2 && !videoElement.paused) {
-                try { await pose.send({ image: videoElement }); } catch (e) {}
-            }
-            requestAnimationFrame(poseLoop);
+        select.onchange = () => startCamera(select.value);
+        if (videoDevices.length > 0) {
+          // 優先選擇後置鏡頭 (手機端)
+          const backCam = videoDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear'));
+          select.value = backCam ? backCam.deviceId : videoDevices[0].deviceId;
+          await startCamera(select.value);
         }
-        requestAnimationFrame(poseLoop);
+      } catch (e) {
+        document.getElementById('statusBanner').textContent = '❌ 無法存取攝影機，請檢查瀏覽器權限';
+      }
     }
 
-    // 🎯 YOLO 核心辨識邏輯
-    async function scanDeviceLCDWithYOLO(video) {
-        if (!yoloSession || !video || video.readyState < 2 || video.videoWidth === 0) return 0;
-        
-        const sw = video.videoWidth;
-        const sh = video.videoHeight;
+    async function startCamera(deviceId) {
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+      }
+      currentStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      video.srcObject = currentStream;
+      video.onloadedmetadata = () => {
+        overlayCanvas.width = video.clientWidth;
+        overlayCanvas.height = video.clientHeight;
+      };
+    }
 
-        // 1. 建立 640x640 畫布並截取綠框 ROI 範圍
-        const canvas = document.createElement('canvas');
-        canvas.width = 640;
-        canvas.height = 640;
-        const ctx = canvas.getContext('2d');
-        
-        ctx.drawImage(video, sw * 0.15, sh * 0.20, sw * 0.70, sh * 0.55, 0, 0, 640, 640);
-        const imgData = ctx.getImageData(0, 0, 640, 640);
-
-        // 2. 轉換為 ONNX Tensor (1x3x640x640)
-        const float32Data = new Float32Array(3 * 640 * 640);
-        const data = imgData.data;
-        for (let i = 0; i < 640 * 640; i++) {
-            float32Data[i] = data[i * 4] / 255.0;
-            float32Data[640 * 640 + i] = data[i * 4 + 1] / 255.0;
-            float32Data[2 * 640 * 640 + i] = data[i * 4 + 2] / 255.0;
-        }
-        const tensor = new ort.Tensor('float32', float32Data, [1, 3, 640, 640]);
-
-        const feeds = {};
-        feeds[yoloSession.inputNames[0]] = tensor;
-
+    // ================= YOLOv8 推論主迴圈 =================
+    async function inferenceLoop() {
+      if (ortSession && !isInferencing && video.readyState >= 2) {
+        isInferencing = true;
         try {
-            const results = await yoloSession.run(feeds);
-            const output = results[yoloSession.outputNames[0]].data;
-
-            // 3. 解析 YOLO 輸出並依 X 座標由左到右排序
-            let detections = parseYoloDetections(output);
-            detections.sort((a, b) => a.x - b.x);
-
-            console.log("YOLO 偵測結果:", detections.map(d => `${d.cls}(x:${Math.round(d.x)})`).join(', '));
-
-            let bestVal = 0;
-            if (detections.length >= 2) {
-                let digits = detections.map(d => d.cls);
-                if (detections.length === 3) {
-                    // [十位, 個位, 十分位] -> 例如 1, 3, 5 => 13.5
-                    bestVal = (digits[0] * 10) + digits[1] + (digits[2] * 0.1);
-                } else if (detections.length === 2) {
-                    // [個位, 十分位] -> 例如 8, 2 => 8.2
-                    bestVal = digits[0] + (digits[1] * 0.1);
-                }
-            }
-
-            return (bestVal >= 0.5 && bestVal <= 60.0) ? Math.round(bestVal * 2) / 2 : 0;
-        } catch (err) {
-            console.error("YOLO 推論錯誤:", err);
-            return 0;
+          await runYoloDetection();
+        } catch (e) {
+          console.error('推論錯誤:', e);
         }
+        isInferencing = false;
+      }
+      requestAnimationFrame(inferenceLoop);
     }
 
-    // 解析 YOLOv8 標準輸出張量 (格式 [8400, 14] 或類似)
-    function parseYoloDetections(output) {
-        let boxes = [];
-        let numClasses = 10; // 0-9 共 10 個類別
-        let numElements = 8400; // 典型 YOLOv8 anchor 數量
-        
-        // 假設 output 結構為 [1, 4 + numClasses, 8400]
-        for (let i = 0; i < numElements; i++) {
-            let maxClassScore = 0;
-            let bestClassId = -1;
+    async function runYoloDetection() {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) return;
 
-            for (let c = 0; c < numClasses; c++) {
-                let score = output[(4 + c) * numElements + i];
-                if (score > maxClassScore) {
-                    maxClassScore = score;
-                    bestClassId = c;
-                }
-            }
+      // 同步覆蓋層畫布大小
+      if (overlayCanvas.width !== video.clientWidth || overlayCanvas.height !== video.clientHeight) {
+        overlayCanvas.width = video.clientWidth;
+        overlayCanvas.height = video.clientHeight;
+      }
 
-            // 信心水準門檻值
-            if (maxClassScore > 0.55) {
-                let x = output[0 * numElements + i];
-                let y = output[1 * numElements + i];
-                boxes.push({ cls: bestClassId, x: x, confidence: maxClassScore });
-            }
-        }
+      // 1. 裁切綠色對準框內的影像並縮放至 640x640
+      const sx = vw * ROI.x;
+      const sy = vh * ROI.y;
+      const sw = vw * ROI.w;
+      const sh = vh * ROI.h;
 
-        // 非極大值抑制 (NMS) 簡單過濾重複框
-        let filtered = [];
-        boxes.sort((a, b) => b.confidence - a.confidence);
-        for (let box of boxes) {
-            let overlap = false;
-            for (let f of filtered) {
-                if (Math.abs(f.x - box.x) < 25 && f.cls === box.cls) {
-                    overlap = true;
-                    break;
-                }
-            }
-            if (!overlap) filtered.push(box);
-        }
-        return filtered;
+      procCtx.fillStyle = '#1e1e1e';
+      procCtx.fillRect(0, 0, INPUT_SIZE, INPUT_SIZE);
+      procCtx.drawImage(video, sx, sy, sw, sh, 0, 0, INPUT_SIZE, INPUT_SIZE);
+
+      // 2. 轉換為 YOLOv8 所需的 Float32 Tensor [1, 3, 640, 640] (RGB 歸一化 0~1)
+      const imgData = procCtx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE).data;
+      const float32Data = new Float32Array(3 * INPUT_SIZE * INPUT_SIZE);
+      const area = INPUT_SIZE * INPUT_SIZE;
+
+      for (let i = 0; i < area; i++) {
+        const idx = i * 4;
+        float32Data[i] = imgData[idx] / 255.0;             // R
+        float32Data[i + area] = imgData[idx + 1] / 255.0;  // G
+        float32Data[i + 2 * area] = imgData[idx + 2] / 255.0; // B
+      }
+
+      const inputTensor = new ort.Tensor('float32', float32Data, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+      const feeds = {};
+      feeds[ortSession.inputNames[0]] = inputTensor;
+
+      // 3. 執行推論
+      const results = await ortSession.run(feeds);
+      const output = results[ortSession.outputNames[0]]; // shape: [1, 14, 8400]
+      const detections = parseYoloOutput(output.data, output.dims);
+
+      // 4. 繪製偵測框與解析數值
+      drawDetectionsAndUpdateUI(detections);
     }
 
-    async function matchLoop() {
-        if (!isProcessing && (state === 'WAITING_FOR_TARGET' || state === 'TESTING')) {
-            const video = document.getElementById('webcam');
-            if (video && video.readyState >= 2 && video.videoWidth > 0) {
-                isProcessing = true;
-                let val = await scanDeviceLCDWithYOLO(video);
-                if (val > 0) {
-                    latestOcrValue = val;
-                    document.getElementById('current-grip-display').innerText = `${latestOcrValue} kg`;
-                }
-                isProcessing = false;
-            }
-        }
-        setTimeout(matchLoop, 300);
-    }
+    // 解析 YOLOv8 輸出張量 [1, 14, 8400] (4座標 + 10類別)
+    function parseYoloOutput(data, dims) {
+      const numClasses = dims[1] - 4; // 10 個數字 (0~9)
+      const numAnchors = dims[2];     // 8400
+      const boxes = [];
 
-    function showStartButton(label) {
-        const controlArea = document.getElementById('control-area');
-        controlArea.innerHTML = `<button class="btn-primary" onclick="startCountdown()">${label}</button>`;
-    }
+      for (let i = 0; i < numAnchors; i++) {
+        let maxScore = 0;
+        let classId = -1;
 
-    function startCountdown() {
-        state = 'COUNTING_DOWN';
-        document.getElementById('control-area').innerHTML = '';
-        let count = 3;
-        let handName = currentHand === 'right' ? '右手' : '左手';
-        
-        document.getElementById('status-bar').style.backgroundColor = 'rgba(255, 152, 0, 0.3)';
-        document.getElementById('status-bar').innerText = `🔥 ${handName}準備！倒數 ${count} 秒...`;
-        speak(`${count}`);
-
-        countdownTimer = setInterval(() => {
-            count--;
-            if (count > 0) {
-                document.getElementById('status-bar').innerText = `🔥 ${handName}準備！倒數 ${count} 秒...`;
-                speak(`${count}`);
-            } else {
-                clearInterval(countdownTimer);
-                beginGripMeasurement();
-            }
-        }, 1000);
-    }
-
-    function beginGripMeasurement() {
-        state = 'TESTING';
-        maxGripScore = 0.0;
-        latestOcrValue = 0.0;
-        document.getElementById('max-grip-display').innerText = '0.0 kg';
-        
-        speak("請全力握緊！");
-        document.getElementById('status-bar').style.backgroundColor = 'rgba(0, 230, 118, 0.2)';
-        document.getElementById('status-bar').style.borderColor = '#00e676';
-        document.getElementById('status-bar').style.color = '#00e676';
-        document.getElementById('status-bar').innerText = "💪 測驗中 (5秒)：請持續用力緊握手握器...";
-
-        let timeLeft = 5;
-        testTimer = setInterval(() => {
-            if (latestOcrValue > 0) {
-                if (latestOcrValue > maxGripScore) {
-                    maxGripScore = latestOcrValue;
-                    document.getElementById('max-grip-display').innerText = `${maxGripScore} kg`;
-                }
-            }
-
-            timeLeft--;
-            if (timeLeft > 0) speak(`${timeLeft}`);
-
-            if (timeLeft <= 0) {
-                clearInterval(testTimer);
-                
-                if (maxGripScore <= 0) {
-                    document.getElementById('status-bar').innerText = "⚠️ 未穩定讀取到數值，請調整擺放位置後重試！";
-                    speak("未讀取到數值，請重試。");
-                    state = 'WAITING_FOR_TARGET';
-                    showStartButton(`🔄 重新測驗 ${currentHand === 'right' ? '右手' : '左手'} (第 ${currentAttempt} 次)`);
-                    return;
-                }
-
-                if (currentHand === 'right') rightAttempts.push(maxGripScore);
-                else leftAttempts.push(maxGripScore);
-
-                speak(`成績，${maxGripScore} 公斤。`);
-                handleAttemptCompletion();
-            }
-        }, 1000);
-    }
-
-    function handleAttemptCompletion() {
-        let handName = currentHand === 'right' ? '右手' : '左手';
-        
-        if (currentAttempt < 3) {
-            currentAttempt++;
-            state = 'WAITING_FOR_TARGET';
-            document.getElementById('status-bar').innerHTML = `🎉 【${handName}】第 ${currentAttempt - 1} 次成績：<b>${maxGripScore} kg</b>。準備好後請點擊下方按鈕進行下一次！`;
-            document.getElementById('current-hand-label').innerText = `${handName} (第${currentAttempt}次)`;
-            showStartButton(`▶️ 開始 ${handName}第 ${currentAttempt} 次測驗`);
-        } else {
-            if (currentHand === 'right') {
-                currentHand = 'left';
-                currentAttempt = 1;
-                state = 'WAITING_FOR_TARGET';
-                document.getElementById('current-hand-label').innerText = `左手 (第1次)`;
-                document.getElementById('status-bar').innerHTML = `✅ 右手測驗全部完成！請換左手，準備好後點擊按鈕。`;
-                speak("右手測驗完畢，請換左手進行測驗");
-                showStartButton("🦾 開始左手第 1 次測驗");
-            } else {
-                showFinalUploadAndStop();
-            }
-        }
-    }
-
-    async function showFinalUploadAndStop() {
-        state = 'FINISHED';
-        let bestRight = rightAttempts.length > 0 ? Math.max(...rightAttempts) : 0;
-        let bestLeft = leftAttempts.length > 0 ? Math.max(...leftAttempts) : 0;
-        
-        document.getElementById('status-bar').innerHTML = `📊 左右手全部完成！結算：右手 <b>${bestRight} kg</b> | 左手 <b>${bestLeft} kg</b><br>⏳ 正在上傳至雲端...`;
-        speak("左右手測驗全部完成，正在上傳成績");
-        
-        try {
-            await supabaseClient.from('fitness_records').insert([{ student_id: currentUserId, category: 'grip_right', score_value: bestRight, created_at: new Date() }]);
-            await supabaseClient.from('fitness_records').insert([{ student_id: currentUserId, category: 'grip_left', score_value: bestLeft, created_at: new Date() }]);
-            document.getElementById('status-bar').innerHTML = `✅ 成績已成功上傳至雲端！<br>📊 最佳成績：右手 <b>${bestRight} kg</b> | 左手 <b>${bestLeft} kg</b>`;
-            speak("成績上傳成功");
-            loadHistory();
-        } catch (err) {
-            document.getElementById('status-bar').innerText = "⚠️ 雲端上傳失敗，請檢查資料表連線";
+        for (let c = 0; c < numClasses; c++) {
+          const score = data[(4 + c) * numAnchors + i];
+          if (score > maxScore) {
+            maxScore = score;
+            classId = c;
+          }
         }
 
-        const controlArea = document.getElementById('control-area');
-        controlArea.innerHTML = `<button class="btn-secondary" onclick="fullReset()">🔄 重新開始全新測驗</button>`;
+        if (maxScore >= CONF_THRESHOLD) {
+          const cx = data[0 * numAnchors + i];
+          const cy = data[1 * numAnchors + i];
+          const w = data[2 * numAnchors + i];
+          const h = data[3 * numAnchors + i];
+
+          boxes.push({
+            classId,
+            score: maxScore,
+            x1: cx - w / 2,
+            y1: cy - h / 2,
+            x2: cx + w / 2,
+            y2: cy + h / 2,
+            cx
+          });
+        }
+      }
+
+      return nonMaxSuppression(boxes, IOU_THRESHOLD);
     }
 
-    function fullReset() { 
-        currentHand = 'right'; 
-        currentAttempt = 1; 
-        rightAttempts = []; 
-        leftAttempts = []; 
-        maxGripScore = 0.0;
-        latestOcrValue = 0.0;
-        document.getElementById('current-hand-label').innerText = `右手 (第1次)`;
-        document.getElementById('current-grip-display').innerText = '0.0 kg';
-        document.getElementById('max-grip-display').innerText = '0.0 kg';
-        document.getElementById('status-bar').style.backgroundColor = 'rgba(255, 152, 0, 0.15)';
-        document.getElementById('status-bar').style.borderColor = '#ff9800';
-        document.getElementById('status-bar').style.color = '#ff9800';
-        document.getElementById('status-bar').innerText = `✅ 就緒！請將右手握力計放入綠框內。`;
-        showStartButton("🚀 開始右手第 1 次測驗");
-        state = 'WAITING_FOR_TARGET';
+    // 非極大值抑制 (NMS) 去除重複框
+    function nonMaxSuppression(boxes, iouThresh) {
+      boxes.sort((a, b) => b.score - a.score);
+      const selected = [];
+
+      while (boxes.length > 0) {
+        const current = boxes.shift();
+        selected.push(current);
+        boxes = boxes.filter(box => computeIoU(current, box) < iouThresh);
+      }
+      return selected;
     }
 
-    async function loadHistory() {
-        const tbody = document.getElementById('history-tbody');
-        try {
-            const { data, error } = await supabaseClient.from('fitness_records').select('*').eq('student_id', currentUserId).in('category', ['grip_right', 'grip_left']).order('created_at', { ascending: false }).limit(10);
-            tbody.innerHTML = '';
-            if (!data || data.length === 0) { tbody.innerHTML = `<tr><td colspan="3">尚無記錄</td></tr>`; return; }
-            data.forEach(row => {
-                let handType = row.category === 'grip_right' ? '🔴 右手' : '🔵 左手';
-                tbody.innerHTML += `<tr><td>${new Date(row.created_at).toLocaleString('zh-HK', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td><td>${handType}</td><td><b style="color: #ff9800;">${row.score_value} kg</b></td></tr>`;
-            });
-        } catch (err) { tbody.innerHTML = `<tr><td colspan="3" style="color: red;">載入失敗</td></tr>`; }
+    function computeIoU(a, b) {
+      const x1 = Math.max(a.x1, b.x1);
+      const y1 = Math.max(a.y1, b.y1);
+      const x2 = Math.min(a.x2, b.x2);
+      const y2 = Math.min(a.y2, b.y2);
+      const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+      const areaA = (a.x2 - a.x1) * (a.y2 - a.y1);
+      const areaB = (b.x2 - b.x1) * (b.y2 - b.y1);
+      return inter / (areaA + areaB - inter + 1e-6);
     }
 
-    const synth = window.speechSynthesis;
-    const speak = (text) => { 
-        const utter = new SpeechSynthesisUtterance(text); 
-        utter.lang = 'zh-HK'; 
-        synth.cancel(); 
-        synth.speak(utter); 
-    };
-</script>
+    // 繪製偵測框並組合數字
+    function drawDetectionsAndUpdateUI(detections) {
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+      const banner = document.getElementById('statusBanner');
+      const liveEl = document.getElementById('liveReading');
+      const recordBtn = document.getElementById('recordBtn');
+
+      if (detections.length === 0) {
+        stableBuffer = [];
+        banner.textContent = '⚠️ 未穩定讀取到數值，請調整擺放位置後重試！';
+        banner.classList.remove('ready');
+        return;
+      }
+
+      // 依 X 座標由左至右排序
+      detections.sort((a, b) => a.cx - b.cx);
+
+      // 將 640x640 座標映射回畫布上的綠框區域
+      const roiPxX = overlayCanvas.width * ROI.x;
+      const roiPxY = overlayCanvas.height * ROI.y;
+      const roiPxW = overlayCanvas.width * ROI.w;
+      const roiPxH = overlayCanvas.height * ROI.h;
+
+      let digitStr = '';
+      detections.forEach(det => {
+        digitStr += det.classId.toString();
+
+        const bx = roiPxX + (det.x1 / INPUT_SIZE) * roiPxW;
+        const by = roiPxY + (det.y1 / INPUT_SIZE) * roiPxH;
+        const bw = ((det.x2 - det.x1) / INPUT_SIZE) * roiPxW;
+        const bh = ((det.y2 - det.y1) / INPUT_SIZE) * roiPxH;
+
+        overlayCtx.strokeStyle = '#10b981';
+        overlayCtx.lineWidth = 2.5;
+        overlayCtx.strokeRect(bx, by, bw, bh);
+
+        overlayCtx.fillStyle = '#10b981';
+        overlayCtx.font = 'bold 14px sans-serif';
+        overlayCtx.fillText(`${det.classId} (${Math.round(det.score * 100)}%)`, bx, by - 5);
+      });
+
+      // 手握力計格式固定為 1 位小數 (例如 "122" -> 12.2, "85" -> 8.5)
+      if (digitStr.length >= 2 && digitStr.length <= 3) {
+        const rawVal = parseInt(digitStr, 10) / 10.0;
+        // 0.5 kg 四捨五入結算
+        const roundedKg = Math.round(rawVal * 2) / 2;
+
+        if (roundedKg >= 0.5 && roundedKg <= 60.0) {
+          stableBuffer.push(roundedKg);
+          if (stableBuffer.length > 5) stableBuffer.shift();
+
+          // 連續 3 幀讀數一致即判定為穩定
+          const isStable = stableBuffer.length >= 3 && stableBuffer.every(v => v === roundedKg);
+
+          if (isStable) {
+            latestValidKg = roundedKg;
+            liveEl.textContent = `${roundedKg.toFixed(1)} kg`;
+            banner.textContent = `✅ 已穩定鎖定讀數：${roundedKg.toFixed(1)} kg (原始: ${rawVal.toFixed(1)})`;
+            banner.classList.add('ready');
+            recordBtn.disabled = attempts[currentHand].length >= 3;
+          } else {
+            liveEl.textContent = `${roundedKg.toFixed(1)} kg`;
+            banner.textContent = `🔍 偵測中 (${digitStr})... 請保持穩定`;
+          }
+        }
+      }
+    }
+
+    // ================= 測驗流程與紀錄管理 =================
+    function selectHand(hand) {
+      currentHand = hand;
+      document.getElementById('btnRight').classList.toggle('active', hand === 'right');
+      document.getElementById('btnLeft').classList.toggle('active', hand === 'left');
+      updateStatsUI();
+    }
+
+    function updateStatsUI() {
+      const list = attempts[currentHand];
+      const nextAttemptNum = Math.min(list.length + 1, 3);
+      const handName = currentHand === 'right' ? '右手' : '左手';
+
+      document.getElementById('rightCount').textContent = attempts.right.length;
+      document.getElementById('leftCount').textContent = attempts.left.length;
+      document.getElementById('currentHandLabel').textContent =
+        list.length >= 3 ? `${handName} (已完成3次)` : `${handName} (第${nextAttemptNum}次)`;
+
+      const best = list.length > 0 ? Math.max(...list) : 0.0;
+      document.getElementById('bestReading').textContent = `${best.toFixed(1)} kg`;
+      document.getElementById('recordBtn').disabled = list.length >= 3 || latestValidKg === null;
+    }
+
+    function recordAttempt() {
+      if (latestValidKg === null || attempts[currentHand].length >= 3) return;
+
+      attempts[currentHand].push(latestValidKg);
+      const handName = currentHand === 'right' ? '右手' : '左手';
+      const count = attempts[currentHand].length;
+
+      speak(`${handName}第${count}次，${latestValidKg}公斤`);
+      updateStatsUI();
+
+      // 若該手滿 3 次，自動切換另一手或儲存總成績
+      if (attempts.right.length === 3 && attempts.left.length === 0) {
+        selectHand('left');
+        speak('右手測驗完成，請換左手');
+      } else if (attempts.right.length === 3 && attempts.left.length === 3) {
+        saveToHistory();
+        speak('左右手測驗全部完成，成績已儲存');
+      }
+    }
+
+    function resetCurrentStudent() {
+      attempts = { right: [], left: [] };
+      latestValidKg = null;
+      stableBuffer = [];
+      document.getElementById('liveReading').textContent = '0.0 kg';
+      selectHand('right');
+    }
+
+    function saveToHistory() {
+      const studentId = document.getElementById('studentId').value.trim() || '未命名';
+      const rBest = attempts.right.length ? Math.max(...attempts.right) : 0;
+      const lBest = attempts.left.length ? Math.max(...attempts.left) : 0;
+      const totalBest = Math.max(rBest, lBest);
+
+      const history = JSON.parse(localStorage.getItem('grip_history') || '[]');
+      history.unshift({
+        studentId,
+        rBest: rBest.toFixed(1),
+        lBest: lBest.toFixed(1),
+        totalBest: totalBest.toFixed(1),
+        time: new Date().toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' })
+      });
+      localStorage.setItem('grip_history', JSON.stringify(history));
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const tbody = document.getElementById('historyTableBody');
+      const history = JSON.parse(localStorage.getItem('grip_history') || '[]');
+      tbody.innerHTML = history.map(row => `
+        <tr>
+          <td><strong>${row.studentId}</strong></td>
+          <td>${row.rBest} kg</td>
+          <td>${row.lBest} kg</td>
+          <td style="color:#f59e0b;font-weight:800;">${row.totalBest} kg</td>
+          <td>${row.time}</td>
+        </tr>
+      `).join('');
+    }
+
+    function clearHistory() {
+      localStorage.removeItem('grip_history');
+      renderHistory();
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach((b, i) => {
+        b.classList.toggle('active', (tab === 'test' && i === 0) || (tab === 'history' && i === 1));
+      });
+      document.getElementById('testPanel').classList.toggle('hidden', tab !== 'test');
+      document.getElementById('historyPanel').classList.toggle('active', tab === 'history');
+    }
+
+    function speak(text) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = 'zh-HK';
+        window.speechSynthesis.speak(msg);
+      }
+    }
+  </script>
 </body>
 </html>
