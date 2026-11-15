@@ -6,6 +6,8 @@
     <title>小學生 AI 雲端體適能系統 | 主頁</title>
     <!-- Supabase JS 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Face-api.js 用於多角度人臉特徵擷取 -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
     
     <style>
         * { box-sizing: border-box; font-family: 'Comic Sans MS', cursive, 'Microsoft JhengHei', sans-serif; }
@@ -21,7 +23,7 @@
 
         #main-card {
             width: 100%;
-            max-width: 480px;
+            max-width: 520px;
             background-color: white;
             border-radius: 20px;
             box-shadow: 0 8px 24px rgba(0,0,0,0.15);
@@ -59,12 +61,13 @@
 
         .input-group { margin-bottom: 12px; }
         .input-group label { font-size: 0.9rem; color: #444; font-weight: bold; display: block; margin-bottom: 4px; }
-        .input-group input {
+        .input-group input, .input-group select {
             width: 100%;
             padding: 10px 12px;
             font-size: 1rem;
             border-radius: 10px;
             border: 1.5px solid #ccc;
+            background: #fff;
         }
 
         button.btn-primary {
@@ -89,7 +92,7 @@
             min-height: 24px;
         }
 
-        /* 項目選擇選單區塊（登入後顯示） */
+        /* 登入後的面板區 */
         #menu-view { display: none; flex-direction: column; }
         
         .user-welcome {
@@ -114,22 +117,24 @@
             cursor: pointer;
         }
 
-        /* 登入後的內部 Sub Tabs (挑戰項目 vs 修改個人資料) */
+        /* 登入後的內部 Sub Tabs (支援動態增減) */
         .menu-sub-tabs {
             display: flex;
             border-bottom: 2px solid #eee;
             margin-bottom: 15px;
+            overflow-x: auto;
         }
         .menu-sub-btn {
             flex: 1;
-            padding: 8px;
+            padding: 8px 4px;
             background: none;
             border: none;
-            font-size: 0.95rem;
+            font-size: 0.85rem;
             font-weight: bold;
             color: #888;
             cursor: pointer;
             transition: 0.2s;
+            white-space: nowrap;
         }
         .menu-sub-btn.active {
             color: #33691e;
@@ -169,26 +174,73 @@
         .exercise-title { font-size: 1.1rem; font-weight: bold; color: #c2185b; }
         .exercise-desc { font-size: 0.78rem; color: #666; margin-top: 2px; }
         .arrow-icon { font-size: 1.2rem; color: #ec407a; font-weight: bold; }
+
+        /* 相機與視訊區 */
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            height: 220px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #33691e;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        video { width: 100%; height: 100%; object-fit: cover; }
+
+        /* 老師端過往成績篩選與表格區 */
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .table-container {
+            max-height: 280px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        table.records-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+        }
+        table.records-table th, table.records-table td {
+            border: 1px solid #eee;
+            padding: 6px;
+            text-align: center;
+        }
+        table.records-table th {
+            background-color: #f1f8e9;
+            color: #33691e;
+            position: sticky;
+            top: 0;
+        }
     </style>
 </head>
 <body>
 
 <div id="main-card">
-    <!-- 1. 未登入：身分驗證區 (登入 / 註冊) -->
+    <!-- 1. 未登入：身分驗證區 (登入 / 申請) -->
     <div id="auth-view">
         <h1>體適能 AI 雲端平台</h1>
-        <div class="subtitle">香港小學體適能自我挑戰系統</div>
+        <div class="subtitle">香港小學體適能自我挑戰與多角度識別系統</div>
 
         <div class="auth-tabs">
-            <button class="auth-tab-btn active" onclick="switchAuthTab('login')">學生登入</button>
+            <button class="auth-tab-btn active" onclick="switchAuthTab('login')">用戶登入</button>
             <button class="auth-tab-btn" onclick="switchAuthTab('register')">申請帳戶</button>
         </div>
 
         <!-- 表單 A: 登入 -->
         <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)" autocomplete="off">
             <div class="input-group">
-                <label>學生學號：</label>
-                <input type="text" id="login-student-id" placeholder="例如: S001" autocomplete="off" required>
+                <label>帳號 / 學號：</label>
+                <input type="text" id="login-student-id" placeholder="例如: S001 或 T001" autocomplete="off" required>
             </div>
             <div class="input-group">
                 <label>登入密碼：</label>
@@ -200,12 +252,33 @@
         <!-- 表單 B: 註冊 -->
         <form id="register-form" class="auth-form" onsubmit="handleRegister(event)" autocomplete="off">
             <div class="input-group">
-                <label>學生姓名：</label>
+                <label>真實姓名：</label>
                 <input type="text" id="reg-name" placeholder="例如: 陳小明" autocomplete="off" required>
             </div>
             <div class="input-group">
-                <label>學生學號：</label>
+                <label>帳號 / 學號 (ID)：</label>
                 <input type="text" id="reg-student-id" placeholder="例如: S001" autocomplete="off" required>
+            </div>
+            <div class="input-group">
+                <label>身分角色：</label>
+                <select id="reg-role">
+                    <option value="student">學生 (Student)</option>
+                    <option value="teacher">老師 (Teacher)</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>級別 (Grade) 與 班別 (Class)：</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="reg-grade" placeholder="小一" required>
+                    <input type="text" id="reg-class" placeholder="1A" required>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>性別 (Gender)：</label>
+                <select id="reg-gender">
+                    <option value="M">男 (Male)</option>
+                    <option value="F">女 (Female)</option>
+                </select>
             </div>
             <div class="input-group">
                 <label>設定密碼 (需含大小寫英文字母及數字，最少6字)：</label>
@@ -217,24 +290,22 @@
         <div id="msg-box"></div>
     </div>
 
-    <!-- 2. 已登入：項目選擇面板區 -->
+    <!-- 2. 已登入：控制面板區 -->
     <div id="menu-view">
         <div class="user-welcome">
-            <span>👋 歡迎，<span id="user-display-name">學生</span>！</span>
+            <span>👋 歡迎，<span id="user-display-name">用戶</span> (<span id="user-role-badge">身分</span>)！</span>
             <button class="logout-btn" onclick="handleLogout()">登出</button>
         </div>
 
-        <!-- 登入後的切換分頁 (挑戰項目 vs 修改個人資料) -->
-        <div class="menu-sub-tabs">
-            <button class="menu-sub-btn active" onclick="switchMenuTab('exercises')">🎯 挑戰項目</button>
-            <button class="menu-sub-btn" onclick="switchMenuTab('profile')">⚙️ 修改個人資料</button>
+        <!-- 登入後的內部 Sub Tabs (根據身分動態生成) -->
+        <div class="menu-sub-tabs" id="menu-sub-tabs-container">
+            <!-- 動態插入 Tab 按鈕 -->
         </div>
 
-        <!-- 子分頁 1: 挑戰項目 -->
+        <!-- 子分頁 1: 挑戰項目 (學生與老師共用) -->
         <div id="sub-exercises" class="sub-view active">
             <div class="subtitle" style="margin-bottom: 12px; text-align: left;">請選擇你想進行的體適能 AI 評估</div>
             <div class="exercise-grid">
-                <!-- 項目 1: 仰臥起坐 -->
                 <div class="exercise-card" onclick="navigateToExercise('situp.html')">
                     <div class="exercise-icon">🧘‍♂️</div>
                     <div class="exercise-info">
@@ -243,8 +314,6 @@
                     </div>
                     <div class="arrow-icon">➔</div>
                 </div>
-
-                <!-- 項目 2: 坐位體前屈 -->
                 <div class="exercise-card" onclick="navigateToExercise('sit-n-reach.html')">
                     <div class="exercise-icon">📏</div>
                     <div class="exercise-info">
@@ -253,8 +322,6 @@
                     </div>
                     <div class="arrow-icon">➔</div>
                 </div>
-
-                <!-- 項目 3: 智慧跑圈系統 -->
                 <div class="exercise-card" onclick="navigateToExercise('running_hub.html')">
                     <div class="exercise-icon">🏃‍♂️</div>
                     <div class="exercise-info">
@@ -263,8 +330,6 @@
                     </div>
                     <div class="arrow-icon">➔</div>
                 </div>
-
-                <!-- 項目 4: 一分鐘大字跳 -->
                 <div class="exercise-card" onclick="navigateToExercise('jump.html')">
                     <div class="exercise-icon">⭐</div>
                     <div class="exercise-info">
@@ -273,8 +338,6 @@
                     </div>
                     <div class="arrow-icon">➔</div>
                 </div>
-
-                <!-- 🦾 項目 5: 手握力測驗 (新增選項) -->
                 <div class="exercise-card" onclick="navigateToExercise('grip_strength.html')">
                     <div class="exercise-icon">🦾</div>
                     <div class="exercise-info">
@@ -286,12 +349,29 @@
             </div>
         </div>
 
-        <!-- 子分頁 2: 修改個人資料 -->
+        <!-- 子分頁 2: 人臉多角度登記 (學生與老師共用) -->
+        <div id="sub-face-enroll" class="sub-view">
+            <div class="subtitle" style="text-align: left; margin-bottom: 8px;">📷 註冊多角度人臉特徵 (支援 everycone_cam 辨識)</div>
+            <div class="video-wrapper">
+                <video id="enroll-webcam" autoplay muted playsinline></video>
+            </div>
+            <div id="enroll-status" style="font-size: 0.9rem; font-weight: bold; color: #d81b60; margin-bottom: 10px;">準備就緒，請點擊下方按鈕開始記錄</div>
+            <button class="btn-primary" onclick="startFaceEnrollmentSequence()" style="margin-top: 0; background-color: #33691e;">📸 開始多角度人臉登記 (正面/左/右)</button>
+        </div>
+
+        <!-- 子分頁 3: 修改個人資料 (學生與老師共用) -->
         <div id="sub-profile" class="sub-view">
             <form onsubmit="handleUpdateProfile(event)" autocomplete="off">
                 <div class="input-group">
-                    <label>修改姓名：</label>
+                    <label>修改真實姓名：</label>
                     <input type="text" id="update-name" placeholder="輸入新姓名" autocomplete="off" required>
+                </div>
+                <div class="input-group">
+                    <label>級別 / 班別：</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="update-grade" placeholder="小一">
+                        <input type="text" id="update-class" placeholder="1A">
+                    </div>
                 </div>
                 <hr style="border: 0; border-top: 1px solid #eee; margin: 12px 0;">
                 <div class="input-group">
@@ -299,39 +379,128 @@
                     <input type="password" id="update-old-pwd" placeholder="請輸入目前密碼" autocomplete="new-password">
                 </div>
                 <div class="input-group">
-                    <label>新密碼 (需含大小寫英文字母及數字，最少6字)：</label>
-                    <input type="password" id="update-new-pwd-1" placeholder="留空代表不修改密碼" autocomplete="new-password">
-                </div>
-                <div class="input-group">
-                    <label>確認新密碼：</label>
-                    <input type="password" id="update-new-pwd-2" placeholder="再次輸入新密碼" autocomplete="new-password">
+                    <label>新密碼 (留空代表不修改)：</label>
+                    <input type="password" id="update-new-pwd-1" placeholder="需含大小寫及數字，最少6字" autocomplete="new-password">
                 </div>
                 <button type="submit" class="btn-primary" style="background-color: #33691e;">儲存個人資料更改</button>
             </form>
             <div id="profile-msg-box" style="margin-top: 10px; font-size: 0.9rem; font-weight: bold; min-height: 20px;"></div>
         </div>
+
+        <!-- 子分頁 4 (老師專屬): 團體活動 hub -->
+        <div id="sub-teacher-hub" class="sub-view">
+            <div class="subtitle" style="text-align: left; margin-bottom: 10px;">🏟️ everycone_hub 團體活動管理</div>
+            <div style="background: #f1f8e9; padding: 18px; border-radius: 12px; text-align: center; border: 2px dashed #33691e;">
+                <p style="font-size: 0.9rem; color: #33691e; font-weight: bold; margin-bottom: 15px;">按一下下方按鈕即可開啟連續團體活動主控台，即時廣播並掌控全班學生的體適能挑戰。</p>
+                <button class="btn-primary" onclick="window.open('everycone_hub.html', '_blank')">🚀 啟動 everycone_hub 團體大螢幕</button>
+            </div>
+        </div>
+
+        <!-- 子分頁 5 (老師專屬): 過往成績檢視與匯出 CSV -->
+        <div id="sub-teacher-records" class="sub-view">
+            <div class="subtitle" style="text-align: left; margin-bottom: 8px;">📋 過往成績篩選與數據導出</div>
+            
+            <div class="filter-grid">
+                <div>
+                    <label style="font-size:0.75rem;">測試項目：</label>
+                    <select id="filter-category" onchange="filterAndRenderRecords()">
+                        <option value="">全部項目</option>
+                        <option value="situp">仰臥起坐</option>
+                        <option value="sit_n_reach">坐位體前屈</option>
+                        <option value="jump">大字跳</option>
+                        <option value="grip_right">右手握力</option>
+                        <option value="grip_left">左手握力</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;">時間範圍：</label>
+                    <select id="filter-time" onchange="filterAndRenderRecords()">
+                        <option value="all">所有時間</option>
+                        <option value="1">過往 1 日</option>
+                        <option value="5">過往 5 日</option>
+                        <option value="30">過往 1 個月</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;">級別 (Grade)：</label>
+                    <input type="text" id="filter-grade" placeholder="例: 小一" oninput="filterAndRenderRecords()" style="padding:6px; font-size:0.8rem;">
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;">班別 (Class)：</label>
+                    <input type="text" id="filter-class" placeholder="例: 1A" oninput="filterAndRenderRecords()" style="padding:6px; font-size:0.8rem;">
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;">學生姓名/ID：</label>
+                    <input type="text" id="filter-name" placeholder="搜尋姓名" oninput="filterAndRenderRecords()" style="padding:6px; font-size:0.8rem;">
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;">性別：</label>
+                    <select id="filter-gender" onchange="filterAndRenderRecords()" style="padding:6px; font-size:0.8rem;">
+                        <option value="">全部性別</option>
+                        <option value="M">男</option>
+                        <option value="F">女</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="records-table">
+                    <thead>
+                        <tr>
+                            <th>時間</th>
+                            <th>學生 (ID)</th>
+                            <th>級/班別</th>
+                            <th>項目</th>
+                            <th>成績</th>
+                        </tr>
+                    </thead>
+                    <tbody id="teacher-records-tbody">
+                        <tr><td colspan="5">正在載入數據...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <button class="btn-primary" onclick="exportRecordsToCSV()" style="background-color: #1976d2; margin-top: 5px; padding: 10px;">📥 匯出篩選結果為 CSV</button>
+        </div>
     </div>
 </div>
 
 <script>
-    // --- 1. 請填入你自己的 Supabase 資料 ---
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    // --- 1. Supabase 設定 ---
+    const SUPABASE_URL = 'url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const msgBox = document.getElementById('msg-box');
+    let allGlobalRecords = [];
+    let allGlobalStudents = [];
+    let enrollStream = null;
 
-    // 頁面載入時檢查是否有 Session (已登入狀態)
-    window.addEventListener('DOMContentLoaded', () => {
-        const savedStudentId = sessionStorage.getItem('current_student_id');
-        const savedName = sessionStorage.getItem('current_student_name');
+    // 頁面載入時檢查 Session
+    window.addEventListener('DOMContentLoaded', async () => {
+        await loadFaceApiModels();
+        const savedId = sessionStorage.getItem('current_user_id');
+        const savedName = sessionStorage.getItem('current_user_name');
+        const savedRole = sessionStorage.getItem('current_user_role');
 
-        if (savedStudentId) {
-            showMenuView(savedName || savedStudentId);
+        if (savedId) {
+            showMenuView(savedId, savedName, savedRole);
         }
     });
 
-    // 登入/註冊 Tab 切換
+    // 載入 Face-api 模型
+    async function loadFaceApiModels() {
+        try {
+            const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+            await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        } catch (e) {
+            console.error("Face-api 模型載入失敗", e);
+        }
+    }
+
+    // Tab 切換 (登入/註冊)
     function switchAuthTab(tab) {
         document.querySelectorAll('.auth-tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
@@ -346,55 +515,63 @@
         }
     }
 
-    // 登入後的內部 Sub Tab 切換 (挑戰項目 vs 修改個人資料)
-    function switchMenuTab(tab) {
+    // 登入後內部分頁切換
+    function switchMenuTab(tabId) {
         document.querySelectorAll('.menu-sub-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.sub-view').forEach(view => view.classList.remove('active'));
 
-        if (tab === 'exercises') {
-            document.querySelectorAll('.menu-sub-btn')[0].classList.add('active');
-            document.getElementById('sub-exercises').classList.add('active');
+        // 啟動對應按鈕與視圖
+        const targetBtn = document.getElementById(`btn-sub-${tabId}`);
+        const targetView = document.getElementById(`sub-${tabId}`);
+        if(targetBtn) targetBtn.classList.add('active');
+        if(targetView) targetView.classList.add('active');
+
+        // 特殊分頁初始化
+        if (tabId === 'face-enroll') {
+            startEnrollWebcam();
         } else {
-            document.querySelectorAll('.menu-sub-btn')[1].classList.add('active');
-            document.getElementById('sub-profile').classList.add('active');
-            // 載入當前使用者的最新姓名到輸入框
-            const currentName = sessionStorage.getItem('current_student_name') || '';
-            document.getElementById('update-name').value = currentName;
-            document.getElementById('update-old-pwd').value = '';
-            document.getElementById('update-new-pwd-1').value = '';
-            document.getElementById('update-new-pwd-2').value = '';
+            stopEnrollWebcam();
+        }
+
+        if (tabId === 'teacher-records') {
+            loadTeacherRecordsData();
+        }
+
+        if (tabId === 'profile') {
+            document.getElementById('update-name').value = sessionStorage.getItem('current_user_name') || '';
+            document.getElementById('update-grade').value = sessionStorage.getItem('current_user_grade') || '';
+            document.getElementById('update-class').value = sessionStorage.getItem('current_user_class') || '';
             document.getElementById('profile-msg-box').innerText = '';
         }
     }
 
-    // 🔒 正常密碼強度驗證函式 (最少6位，需包含大小寫英文及數字)
+    // 🔒 密碼強度檢查
     function validatePasswordStrength(pwd) {
-        if (!pwd) return true; // 若沒打算改密碼則略過
-        const minLength = pwd.length >= 6;
-        const hasLower = /[a-z]/.test(pwd);
-        const hasUpper = /[A-Z]/.test(pwd);
-        const hasNum = /[0-9]/.test(pwd);
-        return minLength && hasLower && hasUpper && hasNum;
+        if (!pwd) return true;
+        return pwd.length >= 6 && /[a-z]/.test(pwd) && /[A-Z]/.test(pwd) && /[0-9]/.test(pwd);
     }
 
-    // 處理學生註冊
+    // 處理註冊
     async function handleRegister(e) {
         e.preventDefault();
         const name = document.getElementById('reg-name').value.trim();
         const studentId = document.getElementById('reg-student-id').value.trim();
+        const role = document.getElementById('reg-role').value;
+        const grade = document.getElementById('reg-grade').value.trim();
+        const className = document.getElementById('reg-class').value.trim();
+        const gender = document.getElementById('reg-gender').value;
         const password = document.getElementById('reg-password').value.trim();
 
         if (!validatePasswordStrength(password)) {
             msgBox.style.color = '#f44336';
-            msgBox.innerText = '⚠️ 密碼強度不足：必須包含大小寫英文字母及數字，且長度至少 6 個字元！';
+            msgBox.innerText = '⚠️ 密碼強度不足：需含大小寫英文字母及數字，最少6字！';
             return;
         }
 
         msgBox.style.color = '#ff9800';
-        msgBox.innerText = '正在建立帳戶...';
+        msgBox.innerText = '正在註冊帳戶...';
 
         try {
-            // 檢查學號是否重複
             const { data: existing } = await supabaseClient
                 .from('students_db')
                 .select('student_id')
@@ -403,31 +580,36 @@
 
             if (existing) {
                 msgBox.style.color = '#f44336';
-                msgBox.innerText = '⚠️ 此學號已被註冊，請直接登入！';
+                msgBox.innerText = '⚠️ 此帳號/學號已被註冊！';
                 return;
             }
 
-            // 寫入 Supabase students_db 表
             const { error } = await supabaseClient
                 .from('students_db')
-                .insert([{ student_id: studentId, name: name, pwd: password }]);
+                .insert([{ 
+                    student_id: studentId, 
+                    name: name, 
+                    role: role, 
+                    grade: grade, 
+                    class_name: className, 
+                    gender: gender, 
+                    pwd: password 
+                }]);
 
             if (error) throw error;
 
             msgBox.style.color = '#4caf50';
-            msgBox.innerText = '🎉 帳戶申請成功！正在登入...';
-            
-            saveSession(studentId, name);
-            setTimeout(() => showMenuView(name), 1000);
+            msgBox.innerText = '🎉 註冊成功！正在登入...';
+            saveSession(studentId, name, role, grade, className, gender);
+            setTimeout(() => showMenuView(studentId, name, role), 1000);
 
         } catch (err) {
-            console.error(err);
             msgBox.style.color = '#f44336';
-            msgBox.innerText = `申請失敗: ${err.message}`;
+            msgBox.innerText = `註冊失敗: ${err.message}`;
         }
     }
 
-    // 處理學生登入
+    // 處理登入
     async function handleLogin(e) {
         e.preventDefault();
         const studentId = document.getElementById('login-student-id').value.trim();
@@ -445,146 +627,334 @@
                 .maybeSingle();
 
             if (error) throw error;
-
             if (!data) {
                 msgBox.style.color = '#f44336';
-                msgBox.innerText = '❌ 學號或密碼不正確！';
+                msgBox.innerText = '❌ 帳號或密碼不正確！';
                 return;
             }
 
             msgBox.style.color = '#4caf50';
             msgBox.innerText = '✅ 登入成功！';
 
-            const displayName = data.name || studentId;
-            saveSession(studentId, displayName);
-            setTimeout(() => showMenuView(displayName), 800);
+            const name = data.name || studentId;
+            const role = data.role || 'student';
+            saveSession(studentId, name, role, data.grade || '', data.class_name || '', data.gender || '');
+            setTimeout(() => showMenuView(studentId, name, role), 800);
 
         } catch (err) {
-            console.error(err);
             msgBox.style.color = '#f44336';
             msgBox.innerText = `登入錯誤: ${err.message}`;
         }
     }
 
-    // ⚙️ 處理更新個人資料（姓名與密碼變更）
+    // 更新個人資料
     async function handleUpdateProfile(e) {
         e.preventDefault();
-        const studentId = sessionStorage.getItem('current_student_id');
+        const studentId = sessionStorage.getItem('current_user_id');
         const newName = document.getElementById('update-name').value.trim();
+        const newGrade = document.getElementById('update-grade').value.trim();
+        const newClass = document.getElementById('update-class').value.trim();
         const oldPwd = document.getElementById('update-old-pwd').value.trim();
-        const newPwd1 = document.getElementById('update-new-pwd-1').value.trim();
-        const newPwd2 = document.getElementById('update-new-pwd-2').value.trim();
-        const pMsgBox = document.getElementById('profile-msg-box');
+        const newPwd = document.getElementById('update-new-pwd-1').value.trim();
+        const pBox = document.getElementById('profile-msg-box');
 
-        if (!studentId) {
-            alert('工作階段已過期，請重新登入！');
-            handleLogout();
-            return;
-        }
-
-        pMsgBox.style.color = '#ff9800';
-        pMsgBox.innerText = '正在驗證並更新資料...';
+        pBox.style.color = '#ff9800';
+        pBox.innerText = '正在更新...';
 
         try {
-            // 1. 驗證舊密碼是否正確
-            const { data: userRecord, error: fetchErr } = await supabaseClient
-                .from('students_db')
-                .select('pwd')
-                .eq('student_id', studentId)
-                .maybeSingle();
-
-            if (fetchErr) throw fetchErr;
-
-            if (!userRecord || userRecord.pwd !== oldPwd) {
-                pMsgBox.style.color = '#f44336';
-                pMsgBox.innerText = '❌ 舊密碼不正確，驗證失敗！';
+            const { data: userRec } = await supabaseClient.from('students_db').select('pwd').eq('student_id', studentId).single();
+            if (!userRec || userRec.pwd !== oldPwd) {
+                pBox.style.color = '#f44336';
+                pBox.innerText = '❌ 舊密碼不正確！';
                 return;
             }
 
-            // 準備更新的資料物件
-            let updatePayload = { name: newName };
-
-            // 2. 如果有填寫新密碼，進行安全檢查與兩次輸入比對
-            if (newPwd1 !== '' || newPwd2 !== '') {
-                if (newPwd1 !== newPwd2) {
-                    pMsgBox.style.color = '#f44336';
-                    pMsgBox.innerText = '❌ 兩次輸入的新密碼不一致！';
+            let payload = { name: newName, grade: newGrade, class_name: newClass };
+            if (newPwd) {
+                if (!validatePasswordStrength(newPwd)) {
+                    pBox.style.color = '#f44336';
+                    pBox.innerText = '⚠️ 新密碼強度不足！';
                     return;
                 }
-                if (!validatePasswordStrength(newPwd1)) {
-                    pMsgBox.style.color = '#f44336';
-                    pMsgBox.innerText = '⚠️ 新密碼強度不足：需含大小寫英文字母及數字，且至少 6 個字元！';
-                    return;
-                }
-                updatePayload.pwd = newPwd1;
+                payload.pwd = newPwd;
             }
 
-            // 3. 寫入 Supabase 更新
-            const { error: updateErr } = await supabaseClient
-                .from('students_db')
-                .update(updatePayload)
-                .eq('student_id', studentId);
+            const { error } = await supabaseClient.from('students_db').update(payload).eq('student_id', studentId);
+            if (error) throw error;
 
-            if (updateErr) throw updateErr;
-
-            // 更新 Session 與畫面上顯示的歡迎姓名
-            saveSession(studentId, newName);
+            sessionStorage.setItem('current_user_name', newName);
+            sessionStorage.setItem('current_user_grade', newGrade);
+            sessionStorage.setItem('current_user_class', newClass);
             document.getElementById('user-display-name').innerText = newName;
 
-            pMsgBox.style.color = '#4caf50';
-            pMsgBox.innerText = '🎉 個人資料更新成功！';
-
-            // 清空密碼欄位
+            pBox.style.color = '#4caf50';
+            pBox.innerText = '🎉 資料更新成功！';
             document.getElementById('update-old-pwd').value = '';
             document.getElementById('update-new-pwd-1').value = '';
-            document.getElementById('update-new-pwd-2').value = '';
-
         } catch (err) {
-            console.error(err);
-            pMsgBox.style.color = '#f44336';
-            pMsgBox.innerText = `更新失敗: ${err.message}`;
+            pBox.style.color = '#f44336';
+            pBox.innerText = `更新失敗: ${err.message}`;
         }
     }
 
-    // 保存 Session 狀態
-    function saveSession(studentId, name) {
-        sessionStorage.setItem('current_student_id', studentId);
-        sessionStorage.setItem('current_student_name', name);
+    // Session 儲存
+    function saveSession(id, name, role, grade, className, gender) {
+        sessionStorage.setItem('current_user_id', id);
+        sessionStorage.setItem('current_user_name', name);
+        sessionStorage.setItem('current_user_role', role);
+        sessionStorage.setItem('current_user_grade', grade || '');
+        sessionStorage.setItem('current_user_class', className || '');
+        sessionStorage.setItem('current_user_gender', gender || '');
     }
 
-    // 切換至選單 View
-    function showMenuView(name) {
+    // 顯示主選單與動態生成導覽列
+    function showMenuView(id, name, role) {
         document.getElementById('auth-view').style.display = 'none';
         document.getElementById('menu-view').style.display = 'flex';
         document.getElementById('user-display-name').innerText = name;
-        switchMenuTab('exercises'); // 預設顯示挑戰項目
+        document.getElementById('user-role-badge').innerText = role === 'teacher' ? '老師' : '學生';
+
+        // 動態生成 Sub Tabs 導覽列
+        const tabsContainer = document.getElementById('menu-sub-tabs-container');
+        let tabsHTML = `
+            <button class="menu-sub-btn active" id="btn-sub-exercises" onclick="switchMenuTab('exercises')">🎯 挑戰項目</button>
+            <button class="menu-sub-btn" id="btn-sub-face-enroll" onclick="switchMenuTab('face-enroll')">👤 人臉登記</button>
+            <button class="menu-sub-btn" id="btn-sub-profile" onclick="switchMenuTab('profile')">⚙️ 個人資料</button>
+        `;
+
+        if (role === 'teacher') {
+            tabsHTML += `
+                <button class="menu-sub-btn" id="btn-sub-teacher-hub" onclick="switchMenuTab('teacher-hub')">🏟️ 團體活動</button>
+                <button class="menu-sub-btn" id="btn-sub-teacher-records" onclick="switchMenuTab('teacher-records')">📋 過往成績</button>
+            `;
+        }
+        tabsContainer.innerHTML = tabsHTML;
+        switchMenuTab('exercises');
     }
 
-    // 登出 (同時清空輸入框，防止殘留)
+    // 登出
     function handleLogout() {
-        sessionStorage.removeItem('current_student_id');
-        sessionStorage.removeItem('current_student_name');
-        
-        // 清空登入與註冊輸入框
-        document.getElementById('login-form').reset();
-        document.getElementById('register-form').reset();
-
+        sessionStorage.clear();
+        stopEnrollWebcam();
         document.getElementById('menu-view').style.display = 'none';
         document.getElementById('auth-view').style.display = 'block';
+        document.getElementById('login-form').reset();
+        document.getElementById('register-form').reset();
         msgBox.innerText = '';
         switchAuthTab('login');
     }
 
-    // 在「新分頁」中開啟測驗頁面 (統一使用 user_id 傳參，相容 situp.html 與 grip_strength.html)
+    // 導向測驗頁面
     function navigateToExercise(pageUrl) {
-        const studentId = sessionStorage.getItem('current_student_id');
-        if (!studentId) {
-            alert('請先登入！');
-            return;
-        }
+        const studentId = sessionStorage.getItem('current_user_id');
+        if (!studentId) { alert('請先登入！'); return; }
         window.open(`${pageUrl}?user_id=${encodeURIComponent(studentId)}`, '_blank');
     }
-</script>
 
+    // --- 📷 多角度人臉登記邏輯 ---
+    async function startEnrollWebcam() {
+        const video = document.getElementById('enroll-webcam');
+        try {
+            enrollStream = await navigator.mediaDevices.getUserMedia({ video: {} });
+            video.srcObject = enrollStream;
+        } catch (e) {
+            console.error("相機啟動失敗", e);
+        }
+    }
+
+    function stopEnrollWebcam() {
+        if (enrollStream) {
+            enrollStream.getTracks().forEach(track => track.stop());
+            enrollStream = null;
+        }
+    }
+
+    async function startFaceEnrollmentSequence() {
+        const video = document.getElementById('enroll-webcam');
+        const statusEl = document.getElementById('enroll-status');
+        const studentId = sessionStorage.getItem('current_user_id');
+
+        if (!studentId) { alert('尚未登入！'); return; }
+
+        let multiEncodings = {};
+        const steps = [
+            { key: 'front', prompt: '請正視鏡頭，3秒後擷取正面...' },
+            { key: 'left', prompt: '請將頭部微微轉向右側 (左臉面向鏡頭)，3秒後擷取...' },
+            { key: 'right', prompt: '請將頭部微微轉向左側 (右臉面向鏡頭)，3秒後擷取...' }
+        ];
+
+        for (let step of steps) {
+            statusEl.innerText = step.prompt;
+            await new Promise(r => setTimeout(r, 3000));
+
+            statusEl.innerText = '正在擷取人臉特徵...';
+            const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
+            
+            if (!detection) {
+                alert('未偵測到清晰人臉，請調整位置後重新登記！');
+                statusEl.innerText = '❌ 登記中斷：未偵測到人臉';
+                return;
+            }
+
+            multiEncodings[step.key] = Array.from(detection.descriptor);
+            statusEl.innerText = `✅ ${step.key} 面向特徵擷取成功！`;
+            await new Promise(r => setTimeout(r, 1000));
+        }
+
+        statusEl.innerText = '⏳ 正在將多角度特徵寫入 Supabase...';
+        try {
+            const { error } = await supabaseClient
+                .from('students_db')
+                .update({ face_encoding: multiEncodings })
+                .eq('student_id', studentId);
+
+            if (error) throw error;
+
+            statusEl.style.color = '#2e7d32';
+            statusEl.innerText = '🎉 恭喜！多角度人臉特徵已成功更新，可用於 everycone_cam 辨識！';
+            alert('人臉登記成功！');
+        } catch (err) {
+            statusEl.style.color = '#c62828';
+            statusEl.innerText = `❌ 雲端更新失敗: ${err.message}`;
+        }
+    }
+
+    // --- 📋 老師端：過往成績載入與篩選、CSV 匯出 ---
+    async function loadTeacherRecordsData() {
+        const tbody = document.getElementById('teacher-records-tbody');
+        tbody.innerHTML = `<tr><td colspan="5">載入數據中...</td></tr>`;
+
+        try {
+            // 平行讀取學生資料與成績
+            const [resStudents, resRecords] = await Promise.all([
+                supabaseClient.from('students_db').select('*'),
+                supabaseClient.from('fitness_records').select('*').order('created_at', { ascending: false })
+            ]);
+
+            if (resStudents.error) throw resStudents.error;
+            if (resRecords.error) throw resRecords.error;
+
+            allGlobalStudents = resStudents.data || [];
+            allGlobalRecords = resRecords.data || [];
+
+            filterAndRenderRecords();
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="5" style="color:red;">載入失敗: ${err.message}</td></tr>`;
+        }
+    }
+
+    function filterAndRenderRecords() {
+        const tbody = document.getElementById('teacher-records-tbody');
+        const catFilter = document.getElementById('filter-category').value;
+        const timeFilter = document.getElementById('filter-time').value;
+        const gradeFilter = document.getElementById('filter-grade').value.trim().toLowerCase();
+        const classFilter = document.getElementById('filter-class').value.trim().toLowerCase();
+        const nameFilter = document.getElementById('filter-name').value.trim().toLowerCase();
+        const genderFilter = document.getElementById('filter-gender').value;
+
+        // 建立學生對照表
+        const studentMap = {};
+        allGlobalStudents.forEach(s => { studentMap[s.student_id] = s; });
+
+        const now = new Date();
+
+        const filtered = allGlobalRecords.filter(row => {
+            const student = studentMap[row.student_id] || { name: row.student_id, grade: '', class_name: '', gender: '' };
+
+            // 1. 項目篩選
+            if (catFilter && row.category !== catFilter) return false;
+
+            // 2. 時間範圍篩選
+            if (timeFilter !== 'all') {
+                const rowDate = new Date(row.created_at);
+                const diffDays = (now - rowDate) / (1000 * 60 * 60 * 24);
+                if (diffDays > parseFloat(timeFilter)) return false;
+            }
+
+            // 3. 級別篩選
+            if (gradeFilter && !(student.grade || '').toLowerCase().includes(gradeFilter)) return false;
+
+            // 4. 班別篩選
+            if (classFilter && !(student.class_name || '').toLowerCase().includes(classFilter)) return false;
+
+            // 5. 姓名/ID 篩選
+            if (nameFilter && !student.name.toLowerCase().includes(nameFilter) && !row.student_id.toLowerCase().includes(nameFilter)) return false;
+
+            // 6. 性別篩選
+            if (genderFilter && student.gender !== genderFilter) return false;
+
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" style="color:#777;">沒有符合條件的記錄</td></tr>`;
+            return;
+        }
+
+        let html = '';
+        filtered.forEach(row => {
+            const student = studentMap[row.student_id] || { name: row.student_id, grade: '-', class_name: '-' };
+            const timeStr = new Date(row.created_at).toLocaleString('zh-HK', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+            html += `
+                <tr>
+                    <td>${timeStr}</td>
+                    <td><b>${student.name}</b><br><span style="font-size:0.65rem; color:#888;">(${row.student_id})</span></td>
+                    <td>${student.grade || '-'} / ${student.class_name || '-'}</td>
+                    <td>${row.category}</td>
+                    <td><b style="color:#ec407a;">${row.score_value}</b></td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+    }
+
+    // 📥 匯出 CSV 檔案
+    function exportRecordsToCSV() {
+        const studentMap = {};
+        allGlobalStudents.forEach(s => { studentMap[s.student_id] = s; });
+
+        let csvContent = "\uFEFF" + "時間,學生姓名,學號,級別,班別,性別,測試項目,成績\n";
+
+        const tbodyRows = document.querySelectorAll('#teacher-records-tbody tr');
+        if (tbodyRows.length === 0 || tbodyRows[0].innerText.includes('載入') || tbodyRows[0].innerText.includes('沒有')) {
+            alert('目前沒有可匯出的數據！');
+            return;
+        }
+
+        // 根據當前畫面的篩選結果進行匯出
+        const catFilter = document.getElementById('filter-category').value;
+        const timeFilter = document.getElementById('filter-time').value;
+        const gradeFilter = document.getElementById('filter-grade').value.trim().toLowerCase();
+        const classFilter = document.getElementById('filter-class').value.trim().toLowerCase();
+        const nameFilter = document.getElementById('filter-name').value.trim().toLowerCase();
+        const genderFilter = document.getElementById('filter-gender').value;
+        const now = new Date();
+
+        allGlobalRecords.forEach(row => {
+            const student = studentMap[row.student_id] || { name: row.student_id, grade: '', class_name: '', gender: '' };
+            if (catFilter && row.category !== catFilter) return;
+            if (timeFilter !== 'all') {
+                const diffDays = (now - new Date(row.created_at)) / (1000 * 60 * 60 * 24);
+                if (diffDays > parseFloat(timeFilter)) return;
+            }
+            if (gradeFilter && !(student.grade || '').toLowerCase().includes(gradeFilter)) return;
+            if (classFilter && !(student.class_name || '').toLowerCase().includes(classFilter)) return;
+            if (nameFilter && !student.name.toLowerCase().includes(nameFilter) && !row.student_id.toLowerCase().includes(nameFilter)) return;
+            if (genderFilter && student.gender !== genderFilter) return;
+
+            const timeStr = new Date(row.created_at).toLocaleString('zh-HK');
+            csvContent += `"${timeStr}","${student.name}","${row.student_id}","${student.grade || ''}","${student.class_name || ''}","${student.gender || ''}","${row.category}","${row.score_value}"\n`;
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `fitness_records_${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+</script>
 </body>
 </html>
