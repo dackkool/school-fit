@@ -63,7 +63,7 @@ const SUPABASE_ANON_KEY='sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const MODEL_PATH='./models/best.onnx';
 const INPUT_SIZE=640;
-const CONF_THRESHOLD=0.25; // 改高少少，過濾上面細字
+const CONF_THRESHOLD=0.1; // 改高少少，過濾上面細字
 const IOU_THRESHOLD=0.5;
 // 重點：縮細淨係捉下面大 LCD，你張圖就係因為框太大
 const ROI={x:0.35, y:0.40, w:0.36, h:0.22};
