@@ -45,7 +45,7 @@
             padding: 10px;
             background: none;
             border: none;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             font-weight: bold;
             color: #888;
             cursor: pointer;
@@ -252,8 +252,8 @@
             <div class="video-wrapper" style="height: 200px; border-color: #ec407a;">
                 <video id="login-webcam" autoplay muted playsinline></video>
             </div>
-            <div id="face-login-status" style="font-size: 0.85rem; font-weight: bold; color: #ec407a; margin-bottom: 8px;">請正對鏡頭，點擊下方按鈕進行識別</div>
-            <button type="button" class="btn-primary" onclick="executeFaceLogin()" style="margin-top: 0;">🚀 啟動相機刷臉登入</button>
+            <div id="face-login-status" style="font-size: 0.85rem; font-weight: bold; color: #ec407a; margin-bottom: 8px;">相機準備中...</div>
+            <button type="button" class="btn-primary" onclick="executeFaceLogin()" style="margin-top: 0;">🚀 點擊開始人臉識別</button>
         </div>
 
         <!-- 表單 C: 註冊 -->
@@ -353,17 +353,17 @@
             </div>
         </div>
 
-        <!-- 子分頁 2: 人臉多角度登記 (具備語音導航 & 覆蓋舊記錄) -->
+        <!-- 子分頁 2: 人臉多角度登記 -->
         <div id="sub-face-enroll" class="sub-view">
             <div class="subtitle" style="text-align: left; margin-bottom: 8px;">📷 多角度人臉登記 (將覆蓋並更新舊有的特徵記錄)</div>
             <div class="video-wrapper">
                 <video id="enroll-webcam" autoplay muted playsinline></video>
             </div>
-            <div id="enroll-status" style="font-size: 0.9rem; font-weight: bold; color: #d81b60; margin-bottom: 10px;">請點擊下方按鈕開始語音導航登記</div>
+            <div id="enroll-status" style="font-size: 0.9rem; font-weight: bold; color: #d81b60; margin-bottom: 10px;">相機準備中...</div>
             <button class="btn-primary" onclick="startFaceEnrollmentSequence()" style="margin-top: 0; background-color: #33691e;">🎙️ 開始語音導航人臉登記</button>
         </div>
 
-        <!-- 子分頁 3: 修改個人資料 (支援性別、班級、班別) -->
+        <!-- 子分頁 3: 修改個人資料 -->
         <div id="sub-profile" class="sub-view">
             <form onsubmit="handleUpdateProfile(event)" autocomplete="off">
                 <div class="input-group">
@@ -478,9 +478,8 @@
 </div>
 
 <script>
-    // --- 1. Supabase 設定 ---
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const msgBox = document.getElementById('msg-box');
@@ -489,7 +488,6 @@
     let enrollStream = null;
     let loginStream = null;
 
-    // 語音導航函式 (廣東話)
     function speak(text) {
         if ('speechSynthesis' in window) {
             const utter = new SpeechSynthesisUtterance(text);
@@ -521,7 +519,7 @@
         }
     }
 
-    // 認證 Tab 切換
+    // 登入 Tab 切換
     function switchAuthTab(tab) {
         document.querySelectorAll('.auth-tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
@@ -534,20 +532,28 @@
         } else if (tab === 'face-login') {
             document.querySelectorAll('.auth-tab-btn')[1].classList.add('active');
             document.getElementById('face-login-form').classList.add('active');
-            startLoginWebcam();
+            startLoginWebcam(); // 👈 切換過來時立即請求相機
         } else {
             document.querySelectorAll('.auth-tab-btn')[2].classList.add('active');
             document.getElementById('register-form').classList.add('active');
         }
     }
 
+    // 啟動登入相機
     async function startLoginWebcam() {
         const video = document.getElementById('login-webcam');
+        const statusEl = document.getElementById('face-login-status');
+        statusEl.innerText = "正在請求相機權限...";
         try {
-            loginStream = await navigator.mediaDevices.getUserMedia({ video: {} });
+            loginStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } 
+            });
             video.srcObject = loginStream;
+            await video.play();
+            statusEl.innerText = "相機就緒，請正對鏡頭";
         } catch (e) {
             console.error("無法開啟相機", e);
+            statusEl.innerText = "⚠️ 無法存取相機，請檢查瀏覽器權限！";
         }
     }
 
@@ -558,11 +564,17 @@
         }
     }
 
-    // 🤖 人臉識別登入邏輯
+    // 🤖 人臉識別登入
     async function executeFaceLogin() {
         const video = document.getElementById('login-webcam');
         const statusEl = document.getElementById('face-login-status');
-        statusEl.innerText = "🔍 正在進行 AI 人臉識別...";
+        
+        if (!video.srcObject || video.readyState < 2) {
+            statusEl.innerText = "⚠️ 相機尚未準備好，請稍候...";
+            return;
+        }
+
+        statusEl.innerText = "🔍 正在識別中...";
         speak("正在識別，請面向鏡頭");
 
         const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
@@ -572,19 +584,17 @@
             return;
         }
 
-        // 從 Supabase 取得所有註冊用戶
         const { data: users, error } = await supabaseClient.from('students_db').select('*');
         if (error || !users || users.length === 0) {
-            statusEl.innerText = "⚠️ 資料庫中沒有註冊用戶或讀取失敗。";
+            statusEl.innerText = "⚠️ 資料庫中沒有註冊用戶。";
             return;
         }
 
         let bestMatchUser = null;
-        let lowestDistance = 0.55; // 相似度門檻
+        let lowestDistance = 0.55;
 
         for (let user of users) {
             if (!user.face_encoding) continue;
-            // 走訪該用戶的多角度特徵 (front, left, right)
             for (let poseKey in user.face_encoding) {
                 let storedDesc = new Float32Array(user.face_encoding[poseKey]);
                 let distance = faceapi.euclideanDistance(detection.descriptor, storedDesc);
@@ -604,7 +614,7 @@
                 showMenuView(bestMatchUser.student_id, bestMatchUser.name, bestMatchUser.role || 'student');
             }, 1000);
         } else {
-            statusEl.innerText = "❌ 辨識失敗：找不到符合的臉孔，請改用密碼登入或先註冊。";
+            statusEl.innerText = "❌ 辨識失敗：未知的臉孔";
             speak("辨識失敗，未知的臉孔");
         }
     }
@@ -620,7 +630,7 @@
         if(targetView) targetView.classList.add('active');
 
         if (tabId === 'face-enroll') {
-            startEnrollWebcam();
+            startEnrollWebcam(); // 👈 進入人臉登記分頁時立即啟動相機
         } else {
             stopEnrollWebcam();
         }
@@ -643,7 +653,6 @@
         return pwd.length >= 6 && /[a-z]/.test(pwd) && /[A-Z]/.test(pwd) && /[0-9]/.test(pwd);
     }
 
-    // 處理註冊
     async function handleRegister(e) {
         e.preventDefault();
         const name = document.getElementById('reg-name').value.trim();
@@ -656,7 +665,7 @@
 
         if (!validatePasswordStrength(password)) {
             msgBox.style.color = '#f44336';
-            msgBox.innerText = '⚠️ 密碼強度不足：需含大小寫英文字母及數字，最少6字！';
+            msgBox.innerText = '⚠️ 密碼強度不足：需含大小寫及數字，最少6字！';
             return;
         }
 
@@ -664,29 +673,16 @@
         msgBox.innerText = '正在註冊帳戶...';
 
         try {
-            const { data: existing } = await supabaseClient
-                .from('students_db')
-                .select('student_id')
-                .eq('student_id', studentId)
-                .maybeSingle();
-
+            const { data: existing } = await supabaseClient.from('students_db').select('student_id').eq('student_id', studentId).maybeSingle();
             if (existing) {
                 msgBox.style.color = '#f44336';
                 msgBox.innerText = '⚠️ 此帳號/學號已被註冊！';
                 return;
             }
 
-            const { error } = await supabaseClient
-                .from('students_db')
-                .insert([{ 
-                    student_id: studentId, 
-                    name: name, 
-                    role: role, 
-                    grade: grade, 
-                    class_name: className, 
-                    gender: gender, 
-                    pwd: password 
-                }]);
+            const { error } = await supabaseClient.from('students_db').insert([{ 
+                student_id: studentId, name: name, role: role, grade: grade, class_name: className, gender: gender, pwd: password 
+            }]);
 
             if (error) throw error;
 
@@ -694,14 +690,12 @@
             msgBox.innerText = '🎉 註冊成功！正在登入...';
             saveSession(studentId, name, role, grade, className, gender);
             setTimeout(() => showMenuView(studentId, name, role), 1000);
-
         } catch (err) {
             msgBox.style.color = '#f44336';
             msgBox.innerText = `註冊失敗: ${err.message}`;
         }
     }
 
-    // 處理密碼登入
     async function handleLogin(e) {
         e.preventDefault();
         const studentId = document.getElementById('login-student-id').value.trim();
@@ -711,13 +705,7 @@
         msgBox.innerText = '驗證登入中...';
 
         try {
-            const { data, error } = await supabaseClient
-                .from('students_db')
-                .select('*')
-                .eq('student_id', studentId)
-                .eq('pwd', password)
-                .maybeSingle();
-
+            const { data, error } = await supabaseClient.from('students_db').select('*').eq('student_id', studentId).eq('pwd', password).maybeSingle();
             if (error) throw error;
             if (!data) {
                 msgBox.style.color = '#f44336';
@@ -732,14 +720,12 @@
             const role = data.role || 'student';
             saveSession(studentId, name, role, data.grade || '', data.class_name || '', data.gender || 'M');
             setTimeout(() => showMenuView(studentId, name, role), 800);
-
         } catch (err) {
             msgBox.style.color = '#f44336';
             msgBox.innerText = `登入錯誤: ${err.message}`;
         }
     }
 
-    // 更新個人資料（包含性別、班級、班別）
     async function handleUpdateProfile(e) {
         e.preventDefault();
         const studentId = sessionStorage.getItem('current_user_id');
@@ -841,14 +827,21 @@
         window.open(`${pageUrl}?user_id=${encodeURIComponent(studentId)}`, '_blank');
     }
 
-    // --- 📷 多角度人臉登記 (加入語音導航 & 覆蓋舊記錄) ---
+    // --- 📷 啟動登記相機 ---
     async function startEnrollWebcam() {
         const video = document.getElementById('enroll-webcam');
+        const statusEl = document.getElementById('enroll-status');
+        statusEl.innerText = "正在請求相機權限...";
         try {
-            enrollStream = await navigator.mediaDevices.getUserMedia({ video: {} });
+            enrollStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } 
+            });
             video.srcObject = enrollStream;
+            await video.play();
+            statusEl.innerText = "相機就緒，請點擊下方按鈕開始登記";
         } catch (e) {
             console.error("相機啟動失敗", e);
+            statusEl.innerText = "⚠️ 無法存取相機，請檢查權限！";
         }
     }
 
@@ -876,7 +869,7 @@
         for (let step of steps) {
             statusEl.innerText = step.prompt;
             speak(step.speech);
-            await new Promise(r => setTimeout(r, 3500)); // 等待 3.5 秒讓用家轉頭
+            await new Promise(r => setTimeout(r, 3500));
 
             statusEl.innerText = '正在擷取特徵...';
             const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
@@ -897,7 +890,6 @@
         statusEl.innerText = '⏳ 正在將新特徵覆蓋寫入 Supabase...';
         speak('正在更新雲端記錄');
         try {
-            // 直接覆蓋/更新 face_encoding (會蓋掉舊記錄)
             const { error } = await supabaseClient
                 .from('students_db')
                 .update({ face_encoding: multiEncodings })
@@ -915,7 +907,6 @@
         }
     }
 
-    // --- 📋 老師端：過往成績載入與篩選、CSV 匯出 ---
     async function loadTeacherRecordsData() {
         const tbody = document.getElementById('teacher-records-tbody');
         tbody.innerHTML = `<tr><td colspan="6">載入數據中...</td></tr>`;
@@ -992,7 +983,6 @@
         tbody.innerHTML = html;
     }
 
-    // 📥 匯出 CSV 檔案
     function exportRecordsToCSV() {
         const studentMap = {};
         allGlobalStudents.forEach(s => { studentMap[s.student_id] = s; });
