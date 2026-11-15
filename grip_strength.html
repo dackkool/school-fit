@@ -35,11 +35,12 @@
         video { width: 100%; height: 100%; object-fit: cover; }
         canvas#output-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
 
+        /* 修正 ROI 框位置，使其精準對準右側螢幕 */
         .roi-guide-box {
             position: absolute;
             top: 25%;
-            left: 15%;
-            width: 70%;
+            left: 35%;
+            width: 60%;
             height: 45%;
             border: 3px dashed #00e676;
             border-radius: 10px;
@@ -53,7 +54,7 @@
         .roi-label { background: rgba(0,230,118,0.9); color: black; font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 0 0 6px 6px; }
 
         /* 樣板匹配除錯預覽小方格 */
-        #debug-canvas { position: absolute; bottom: 5px; right: 5px; width: 110px; height: 65px; border: 2px solid #00e676; background: #000; z-index: 20; }
+        #debug-canvas { position: absolute; bottom: 5px; right: 5px; width: 110px; height: 65px; border: 2px solid #00e676; background: #222; z-index: 20; }
         .debug-label { position: absolute; bottom: 73px; right: 5px; font-size: 0.6rem; color: #00e676; z-index: 20; background: rgba(0,0,0,0.8); padding: 2px 5px; border-radius: 4px; }
 
         .hud-panel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
@@ -77,7 +78,7 @@
 
 <div id="main-card">
     <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">dict/ 樣板匹配・二值化優化・0.5kg 結算</div>
+    <div class="subtitle">dict/ 樣板匹配・ROI 位置修正・0.5kg 結算</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
@@ -102,10 +103,10 @@
             <video id="webcam" autoplay muted playsinline></video>
             <canvas id="output-canvas"></canvas>
             
-            <div class="roi-guide-box"><div class="roi-label">請將握力計螢幕置於此綠框內</div></div>
+            <div class="roi-guide-box"><div class="roi-label">請將螢幕對準此綠框內</div></div>
             
             <!-- 樣板匹配除錯預覽小方格 -->
-            <div class="debug-label">二值化匹配預覽</div>
+            <div class="debug-label">樣板匹配預覽</div>
             <canvas id="debug-canvas"></canvas>
         </div>
 
@@ -144,8 +145,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = 'TEST_USER';
@@ -162,7 +163,6 @@
     let isProcessing = false;
     let countdownTimer = null, testTimer = null;
 
-    // 存放 dict/0.png 到 dict/9.png 處理後的二值化 ImageData
     let digitTemplates = {};
 
     window.addEventListener('DOMContentLoaded', async () => {
@@ -215,13 +215,12 @@
             videoElement.srcObject = mediaStream;
             await videoElement.play();
         } catch (err) {
-            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！";
+            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！請確認是否使用 Live Server 運行。";
         }
     }
 
     async function changeCamera() { await startWebcam(document.getElementById('camera-select').value); }
 
-    // 🎯 載入 dict 圖片並轉換為二值化標準樣板
     async function loadDigitTemplates() {
         document.getElementById('status-bar').innerText = "⏳ 正在載入 dict/ 0-9 樣板圖片...";
         let loadedCount = 0;
@@ -236,7 +235,6 @@
                     const ctx = c.getContext('2d');
                     ctx.drawImage(img, 0, 0, 30, 50);
                     
-                    // 轉為二值化 (白字黑底)
                     let imgData = ctx.getImageData(0, 0, 30, 50);
                     let data = imgData.data;
                     for (let p = 0; p < data.length; p += 4) {
@@ -250,14 +248,18 @@
                     resolve();
                 };
                 img.onerror = () => {
-                    console.warn(`無法載入 dict/${i}.png`);
+                    console.error(`⚠️ 無法載入 dict/${i}.png。請確認是否使用 Local Server (如 Live Server) 開啟網頁！`);
                     resolve();
                 };
             });
         }
-        document.getElementById('status-bar').innerText = `✅ 樣板載入完成 (${loadedCount}/10)！點擊按鈕開始測驗`;
-        showStartButton("🚀 開始右手第 1 次測驗");
-        speak("系統就緒，請準備進行右手測驗");
+        if (loadedCount === 0) {
+            document.getElementById('status-bar').innerText = "❌ 警告：無法載入 dict/ 圖片！請確認伺服器與資料夾路徑。";
+        } else {
+            document.getElementById('status-bar').innerText = `✅ 樣板載入完成 (${loadedCount}/10)！點擊下方按鈕開始`;
+            showStartButton("🚀 開始右手第 1 次測驗");
+            speak("系統就緒，請準備進行右手測驗");
+        }
     }
 
     function initMediaPipePose() {
@@ -288,7 +290,6 @@
         requestAnimationFrame(poseLoop);
     }
 
-    // 🎯 核心：二值化與 NCC 樣板匹配
     function computeNCC(d1, d2) {
         let sum1 = 0, sum2 = 0, sumProd = 0, sumSq1 = 0, sumSq2 = 0;
         const len = d1.length;
@@ -314,7 +315,6 @@
         const tempCtx = tempC.getContext('2d');
         tempCtx.drawImage(cellCanvas, 0, 0, 30, 50);
         
-        // 將截圖也轉為二值化
         let imgData = tempCtx.getImageData(0, 0, 30, 50);
         let data = imgData.data;
         for (let p = 0; p < data.length; p += 4) {
@@ -341,9 +341,10 @@
         const sw = video.videoWidth;
         const sh = video.videoHeight;
         
-        const sx = sw * 0.15;
+        // 修正 ROI 擷取座標，對應畫面右側螢幕
+        const sx = sw * 0.35;
         const sy = sh * 0.25;
-        const sWidth = sw * 0.7;
+        const sWidth = sw * 0.6;
         const sHeight = sh * 0.45;
 
         const rawCanvas = document.createElement('canvas');
@@ -373,7 +374,6 @@
             selectedCanvas = rawCanvas;
         }
 
-        // 更新除錯預覽小方格
         const debugCanvas = document.getElementById('debug-canvas');
         const debugCtx = debugCanvas.getContext('2d');
         debugCanvas.width = sWidth;
