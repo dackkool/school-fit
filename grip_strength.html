@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AI 左右手手握力測驗 - GitHub Pages 版</title>
+<title>AI 手握力 - 10 Class 版</title>
+<link rel="icon" href="data:,">
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -15,7 +16,6 @@ body{background-color:var(--bg-dark);color:var(--text-main);display:flex;justify
 .app-container{width:100%;max-width:520px;display:flex;flex-direction:column;gap:14px}
 .header{text-align:center;padding:8px 0}.header h1{color:var(--accent-orange);font-size:1.4rem;font-weight:800}.header p{color:var(--text-muted);font-size:0.75rem;margin-top:2px}
 .tabs{display:flex;border-bottom:1px solid var(--border-color)}.tab-btn{flex:1;background:none;border:none;color:var(--text-muted);padding:10px;font-size:0.95rem;font-weight:700;cursor:pointer;border-bottom:3px solid transparent}.tab-btn.active{color:var(--accent-orange);border-bottom-color:var(--accent-orange)}
-.student-bar{background:var(--card-bg);border:1px solid var(--border-color);padding:10px;border-radius:10px;display:flex;justify-content:space-between;align-items:center}
 .video-wrap{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:12px;overflow:hidden;border:2px solid var(--accent-orange)}
 #video{width:100%;height:100%;object-fit:cover;transform:none} #overlayCanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .roi-box{position:absolute;border:2px dashed #10b981;background:rgba(16,185,129,0.12);pointer-events:none;display:flex;align-items:flex-start;justify-content:center}
@@ -32,41 +32,32 @@ body{background-color:var(--bg-dark);color:var(--text-main);display:flex;justify
 </head>
 <body>
 <div class="app-container">
-  <div class="header"><h1>AI 左右手手握力測驗</h1><p>YOLOv8 智慧螢幕數值偵測 - GitHub 自動感應 Fix 版</p></div>
-  <div class="tabs"><button class="tab-btn active" onclick="switchTab('test')">🤜 手握力測驗</button><button class="tab-btn" onclick="switchTab('history')">📋 雲端歷史成績</button></div>
+  <div class="header"><h1>AI 左右手手握力測驗</h1><p>10 Class (0-9) Fix 版 - GitHub Pages 直接用</p></div>
+  <div class="tabs"><button class="tab-btn active" onclick="switchTab('test')">🤜 手握力測驗</button><button class="tab-btn" onclick="switchTab('history')">📋 雲端歷史</button></div>
   <div id="testPanel">
-    <div class="student-bar"><div>當前學生：<input id="studentId" value="s001" style="width:80px;background:#111;color:#f59e0b;border:1px solid #333;border-radius:6px;padding:4px 8px;font-weight:700"></div><button class="btn-sm" onclick="resetCurrentStudent()">重置本生數據</button></div>
+    <div style="display:flex;gap:8px"><input id="studentId" value="s001" style="flex:1;background:#111;color:#f59e0b;border:1px solid #333;border-radius:8px;padding:8px;font-weight:700"><button class="btn-sm" onclick="resetCurrentStudent()">重置</button></div>
     <select id="cameraSelect" style="width:100%;background:var(--card-bg);color:#fff;border:1px solid var(--border-color);padding:8px;border-radius:8px"></select>
-    <div class="video-wrap" id="videoWrap">
-      <video id="video" autoplay playsinline muted></video>
-      <canvas id="overlayCanvas"></canvas>
-      <div class="roi-box" id="roiBox"><span class="roi-label">請將下面大數字對準此框</span></div>
-    </div>
-    <div class="hand-switch"><button id="btnRight" class="hand-btn active" onclick="selectHand('right')">右手測驗 (<span id="rightCount">0</span>/3)</button><button id="btnLeft" class="hand-btn" onclick="selectHand('left')">左手測驗 (<span id="leftCount">0</span>/3)</button></div>
-    <div class="stat-row">
-      <div class="stat-card"><div class="stat-title">當前測驗手</div><div id="currentHandLabel" class="stat-val green">右手 (第1次)</div></div>
-      <div class="stat-card"><div class="stat-title">即時讀數</div><div id="liveReading" class="stat-val orange">0.0 kg</div></div>
-      <div class="stat-card"><div class="stat-title">本手最佳</div><div id="bestReading" class="stat-val orange">0.0 kg</div></div>
-    </div>
+    <div class="video-wrap" id="videoWrap"><video id="video" autoplay playsinline muted></video><canvas id="overlayCanvas"></canvas><div class="roi-box" id="roiBox"><span class="roi-label">請將下面大數字對準此框 - 例如 8.2</span></div></div>
+    <div class="hand-switch"><button id="btnRight" class="hand-btn active" onclick="selectHand('right')">右手 (<span id="rightCount">0</span>/3)</button><button id="btnLeft" class="hand-btn" onclick="selectHand('left')">左手 (<span id="leftCount">0</span>/3)</button></div>
+    <div class="stat-row"><div class="stat-card"><div class="stat-title">當前</div><div id="currentHandLabel" class="stat-val green">右手 (第1次)</div></div><div class="stat-card"><div class="stat-title">即時</div><div id="liveReading" class="stat-val orange">0.0 kg</div></div><div class="stat-card"><div class="stat-title">最佳</div><div id="bestReading" class="stat-val orange">0.0 kg</div></div></div>
     <div id="statusBanner" class="status-banner">⏳ 正在載入 ./models/best.onnx ...</div>
-    <button id="recordBtn" class="primary-btn" onclick="recordAttempt()" disabled>💾 鎖定並同步儲存至雲端</button>
+    <button id="recordBtn" class="primary-btn" onclick="recordAttempt()" disabled>💾 鎖定儲存</button>
   </div>
-  <div id="historyPanel" class="history-panel">
-    <table><thead><tr><th>學生</th><th>右手最佳</th><th>左手最佳</th><th>總最佳</th><th>時間</th></tr></thead><tbody id="historyTableBody"></tbody></table>
-    <button class="btn-sm" onclick="fetchSupabaseHistory()">🔄 重新整理雲端紀錄</button>
-  </div>
+  <div id="historyPanel" class="history-panel"><table><thead><tr><th>學生</th><th>右手</th><th>左手</th><th>總最佳</th><th>時間</th></tr></thead><tbody id="historyTableBody"></tbody></table><button class="btn-sm" onclick="fetchSupabaseHistory()">🔄 重新整理</button></div>
 </div>
 <canvas id="procCanvas" width="640" height="640" style="display:none"></canvas>
 <script>
-const SUPABASE_URL='https://yenaiiwhfqgksuofnrjn.supabase.co';
-const SUPABASE_ANON_KEY='sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// ===== GitHub Pages 用家注意：如果你暫時唔用 Supabase，將下面兩行留空，個掣就會變本地模式 =====
+const SUPABASE_URL='https://your-project.supabase.co';
+const SUPABASE_ANON_KEY='your-anon-key';
+const supabaseClient = (SUPABASE_URL.includes('your-project')) ? null : supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const MODEL_PATH='./models/best.onnx';
 const INPUT_SIZE=640;
-const CONF_THRESHOLD=0.1; // 改高少少，過濾上面細字
-const IOU_THRESHOLD=0.5;
-// 重點：縮細淨係捉下面大 LCD，你張圖就係因為框太大
-const ROI={x:0.35, y:0.40, w:0.36, h:0.22};
+const CONF_THRESHOLD=0.25; // 你個 11MB n版，0.45太高，0.25先啱
+const IOU_THRESHOLD=0.45;
+const ROI={x:0.35, y:0.50, w:0.40, h:0.22}; // 淨係捉下面大字，避開上面細字 00
+
 let ortSession=null, poseInstance=null, isProcessing=false, currentStream=null;
 let currentHand='right', attempts={right:[],left:[]}, stableBuffer=[], latestValidKg=null, poseStatusText='姿勢標準';
 
@@ -80,7 +71,8 @@ function layoutROI(){ roiBox.style.left=(ROI.x*100)+'%'; roiBox.style.top=(ROI.y
 layoutROI();
 
 window.addEventListener('DOMContentLoaded', async()=>{
-  await initCameras(); await loadYoloModel(); initMediaPipePose(); fetchSupabaseHistory();
+  await initCameras(); await loadYoloModel(); initMediaPipePose();
+  if(supabaseClient) fetchSupabaseHistory();
   requestAnimationFrame(mainLoop);
 });
 
@@ -92,8 +84,10 @@ async function loadYoloModel(){
     ortSession=await ort.InferenceSession.create(MODEL_PATH,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
     banner.textContent='✅ 模型就緒！請將 8.2 對準綠框正中';
     banner.classList.add('ready');
+    console.log('Model OK', ortSession.inputNames, ortSession.outputNames);
   }catch(err){
-    banner.innerHTML=`❌ 載入失敗 ${MODEL_PATH}<br>${err.message}<br>GitHub 請確認 models/best.onnx 有無上傳`;
+    banner.innerHTML=`❌ 載入失敗 ${MODEL_PATH}<br>${err.message}<br>去 https://你的帳號.github.io/你的repo/models/best.onnx 睇下係咪404`;
+    console.error(err);
   }
 }
 function initMediaPipePose(){
@@ -114,7 +108,7 @@ async function initCameras(){
     select.innerHTML=''; vDevs.forEach((d,i)=>{const o=document.createElement('option'); o.value=d.deviceId; o.text=d.label||`相機 ${i+1}`; select.appendChild(o);});
     select.onchange=()=>startCamera(select.value);
     if(vDevs.length>0) startCamera(vDevs[0].deviceId);
-  }catch(e){document.getElementById('statusBanner').textContent='❌ 無法存取攝影機 - 請用 https';}
+  }catch(e){document.getElementById('statusBanner').textContent='❌ 無法存取攝影機 - 請用 https 開 GitHub Pages';}
 }
 async function startCamera(deviceId){
   if(currentStream) currentStream.getTracks().forEach(t=>t.stop());
@@ -139,7 +133,6 @@ async function runYoloDetection(){
   procCtx.fillStyle='#000'; procCtx.fillRect(0,0,INPUT_SIZE,INPUT_SIZE);
   procCtx.drawImage(video, sx,sy,sw,sh, dx,dy,nw,nh);
   window._lb={dx,dy,scale,sw,sh};
-
   const imgData=procCtx.getImageData(0,0,INPUT_SIZE,INPUT_SIZE).data;
   const floatData=new Float32Array(3*INPUT_SIZE*INPUT_SIZE); const area=INPUT_SIZE*INPUT_SIZE;
   for(let i=0;i<area;i++){const j=i*4; floatData[i]=imgData[j]/255; floatData[i+area]=imgData[j+1]/255; floatData[i+2*area]=imgData[j+2]/255;}
@@ -151,8 +144,7 @@ async function runYoloDetection(){
 }
 function parseYoloOutput(data, dims){
   let channels, numAnchors, transposed=false;
-  if(dims[1] > dims[2]){ numAnchors=dims[1]; channels=dims[2]; transposed=true; }
-  else { channels=dims[1]; numAnchors=dims[2]; }
+  if(dims[1] > dims[2]){ numAnchors=dims[1]; channels=dims[2]; transposed=true; } else { channels=dims[1]; numAnchors=dims[2]; }
   const numClasses=channels-4; const boxes=[];
   for(let i=0;i<numAnchors;i++){
     let maxScore=0, classId=-1;
@@ -188,22 +180,17 @@ function drawDetectionsAndUpdateUI(detections){
   if(detections.length===0){
     stableBuffer=[]; banner.innerHTML=`⚠️ ${poseStatusText} | 未能接上感應 - 請將大數字放入綠框`; banner.classList.remove('ready'); return;
   }
-  // 過濾走上面細字：只留 y 在 ROI 下半部
+  // 過濾上面細字：只留 ROI 下半部
   const lb=window._lb;
-  let filtered = detections.filter(d=>{
-    const y_in_roi = (d.cy - lb.dy)/lb.scale; // 在 ROI 內嘅 y
-    return y_in_roi > (lb.sh*0.35); // 35% 以下先係大字
-  });
-  if(filtered.length===0) filtered=detections; // fallback
+  let filtered = detections.filter(d=>{ const y_in_roi=(d.cy-lb.dy)/lb.scale; return y_in_roi > (lb.sh*0.35); });
+  if(filtered.length===0) filtered=detections;
   filtered.sort((a,b)=>a.cx-b.cx);
 
   const roiPxX=overlayCanvas.width*ROI.x, roiPxY=overlayCanvas.height*ROI.y, roiPxW=overlayCanvas.width*ROI.w, roiPxH=overlayCanvas.height*ROI.h;
-  let digitStr=''; let debugStr='';
+  let digitStr=''; 
   filtered.forEach(det=>{
-    let ch = det.classId<=9 ? det.classId.toString() : (det.classId===10?'.':'');
-    if(ch==='') return;
+    const ch = det.classId.toString(); // 0-9 only
     digitStr+=ch;
-    debugStr+=ch;
     const x1=(det.x1-lb.dx)/lb.scale, y1=(det.y1-lb.dy)/lb.scale, x2=(det.x2-lb.dx)/lb.scale, y2=(det.y2-lb.dy)/lb.scale;
     const bx=roiPxX + (x1/lb.sw)*roiPxW, by=roiPxY + (y1/lb.sh)*roiPxH;
     const bw=((x2-x1)/lb.sw)*roiPxW, bh=((y2-y1)/lb.sh)*roiPxH;
@@ -211,11 +198,13 @@ function drawDetectionsAndUpdateUI(detections){
     overlayCtx.fillStyle='#10b981'; overlayCtx.font='bold 12px sans-serif'; overlayCtx.fillText(`${ch} ${Math.round(det.score*100)}%`,bx,by-4);
   });
 
+  // 10 class 專用解析：82 -> 8.2 , 205 -> 20.5
   let kg=null;
-  if(digitStr.includes('.')){ kg=parseFloat(digitStr); }
-  else if(digitStr.length>=2){ kg=parseInt(digitStr,10)/10.0; } // 82 -> 8.2 嘅容錯
-  else if(digitStr.length===1){ kg=parseFloat(digitStr); }
-
+  if(digitStr.length===1) kg=parseInt(digitStr);
+  else if(digitStr.length===2) kg=parseInt(digitStr)/10;
+  else if(digitStr.length===3) kg=parseInt(digitStr)/10;
+  else if(digitStr.length>=4) kg=parseFloat(digitStr.slice(0,-1)+'.'+digitStr.slice(-1));
+  
   if(kg!==null && !isNaN(kg) && kg>=0 && kg<=90){
     const rounded=Math.round(kg*2)/2;
     stableBuffer.push(rounded); if(stableBuffer.length>5) stableBuffer.shift();
@@ -223,14 +212,14 @@ function drawDetectionsAndUpdateUI(detections){
     liveEl.textContent=`${rounded.toFixed(1)} kg`;
     if(isStable){
       latestValidKg=rounded;
-      banner.innerHTML=`✅ ${poseStatusText} | 鎖定：${rounded.toFixed(1)} kg (${digitStr})`;
+      banner.innerHTML=`✅ ${poseStatusText} | 鎖定：${rounded.toFixed(1)} kg (原始:${digitStr})`;
       banner.classList.add('ready');
       recordBtn.disabled=attempts[currentHand].length>=3;
     }else{
       banner.innerHTML=`🔍 偵測中 (${digitStr}) | ${poseStatusText}`;
     }
   }else{
-    banner.innerHTML=`⚠️ 偵測到 ${digitStr || '無'} | ${poseStatusText} | 未能接上感應`;
+    banner.innerHTML=`⚠️ 偵測到 ${digitStr||'無'} | ${poseStatusText} | 未能接上感應`;
   }
 }
 function selectHand(hand){ currentHand=hand; document.getElementById('btnRight').classList.toggle('active',hand==='right'); document.getElementById('btnLeft').classList.toggle('active',hand==='left'); updateStatsUI(); }
@@ -250,9 +239,11 @@ async function recordAttempt(){
 async function saveToSupabase(){
   const studentId=document.getElementById('studentId').value.trim()||'s001';
   const rBest=attempts.right.length?Math.max(...attempts.right):0; const lBest=attempts.left.length?Math.max(...attempts.left):0; const totalBest=Math.max(rBest,lBest);
+  if(!supabaseClient){ alert(`🎉 本地模式已鎖定 ${totalBest}kg (未設 Supabase)`); return; }
   try{ const {error}=await supabaseClient.from('grip_records').insert([{student_id:studentId,r_best:rBest,l_best:lBest,total_best:totalBest,created_at:new Date()}]); if(!error) alert('🎉 已同步至雲端！'); fetchSupabaseHistory(); }catch(e){console.error(e);}
 }
 async function fetchSupabaseHistory(){
+  if(!supabaseClient) return;
   try{ const {data}=await supabaseClient.from('grip_records').select('*').order('created_at',{ascending:false}).limit(20); const tbody=document.getElementById('historyTableBody'); if(!data) return; tbody.innerHTML=data.map(r=>`<tr><td><strong>${r.student_id}</strong></td><td>${r.r_best} kg</td><td>${r.l_best} kg</td><td style="color:#f59e0b;font-weight:800">${r.total_best} kg</td><td>${new Date(r.created_at).toLocaleTimeString('zh-HK')}</td></tr>`).join(''); }catch(e){}
 }
 function resetCurrentStudent(){ attempts={right:[],left:[]}; latestValidKg=null; stableBuffer=[]; document.getElementById('liveReading').textContent='0.0 kg'; selectHand('right'); }
@@ -260,4 +251,3 @@ function switchTab(tab){ document.querySelectorAll('.tab-btn').forEach((b,i)=>{b
 </script>
 </body>
 </html>
-
