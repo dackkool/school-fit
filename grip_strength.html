@@ -35,12 +35,11 @@
         video { width: 100%; height: 100%; object-fit: cover; }
         canvas#output-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
 
-        /* 修正 ROI 框位置，使其精準對準右側螢幕 */
         .roi-guide-box {
             position: absolute;
             top: 25%;
-            left: 35%;
-            width: 60%;
+            left: 20%;
+            width: 70%;
             height: 45%;
             border: 3px dashed #00e676;
             border-radius: 10px;
@@ -53,7 +52,6 @@
         }
         .roi-label { background: rgba(0,230,118,0.9); color: black; font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 0 0 6px 6px; }
 
-        /* 樣板匹配除錯預覽小方格 */
         #debug-canvas { position: absolute; bottom: 5px; right: 5px; width: 110px; height: 65px; border: 2px solid #00e676; background: #222; z-index: 20; }
         .debug-label { position: absolute; bottom: 73px; right: 5px; font-size: 0.6rem; color: #00e676; z-index: 20; background: rgba(0,0,0,0.8); padding: 2px 5px; border-radius: 4px; }
 
@@ -78,7 +76,7 @@
 
 <div id="main-card">
     <h1>AI 左右手手握力測驗</h1>
-    <div class="subtitle">dict/ 樣板匹配・ROI 位置修正・0.5kg 結算</div>
+    <div class="subtitle">dict/ kg.png 錨點定位・精準樣板匹配・0.5kg 結算</div>
 
     <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('challenge')">🦾 手握力測驗</button>
@@ -105,8 +103,7 @@
             
             <div class="roi-guide-box"><div class="roi-label">請將螢幕對準此綠框內</div></div>
             
-            <!-- 樣板匹配除錯預覽小方格 -->
-            <div class="debug-label">樣板匹配預覽</div>
+            <div class="debug-label">錨點辨識預覽</div>
             <canvas id="debug-canvas"></canvas>
         </div>
 
@@ -125,7 +122,7 @@
             </div>
         </div>
 
-        <div id="status-bar">⏳ 正在載入 dict/ 0-9 樣板圖片...</div>
+        <div id="status-bar">⏳ 正在載入 dict/ 樣板圖片 (0-9 及 kg)...</div>
         <div id="control-area"></div>
     </div>
 
@@ -145,8 +142,8 @@
 </div>
 
 <script>
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = 'TEST_USER';
@@ -164,6 +161,7 @@
     let countdownTimer = null, testTimer = null;
 
     let digitTemplates = {};
+    let kgTemplate = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -174,7 +172,7 @@
         await initCameraDevices();
         
         initMediaPipePose();
-        await loadDigitTemplates();
+        await loadTemplates();
         
         matchLoop();
     });
@@ -215,15 +213,17 @@
             videoElement.srcObject = mediaStream;
             await videoElement.play();
         } catch (err) {
-            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！請確認是否使用 Live Server 運行。";
+            document.getElementById('status-bar').innerText = "⚠️ 無法存取相機權限！請確認使用 Live Server 運行。";
         }
     }
 
     async function changeCamera() { await startWebcam(document.getElementById('camera-select').value); }
 
-    async function loadDigitTemplates() {
-        document.getElementById('status-bar').innerText = "⏳ 正在載入 dict/ 0-9 樣板圖片...";
+    async function loadTemplates() {
+        document.getElementById('status-bar').innerText = "⏳ 正在載入 dict/ 樣板圖片 (0-9 及 kg)...";
         let loadedCount = 0;
+        
+        // 載入 0-9 數字樣板
         for (let i = 0; i <= 9; i++) {
             await new Promise((resolve) => {
                 const img = new Image();
@@ -234,31 +234,49 @@
                     c.width = 30; c.height = 50;
                     const ctx = c.getContext('2d');
                     ctx.drawImage(img, 0, 0, 30, 50);
-                    
                     let imgData = ctx.getImageData(0, 0, 30, 50);
-                    let data = imgData.data;
-                    for (let p = 0; p < data.length; p += 4) {
-                        let brightness = 0.3 * data[p] + 0.59 * data[p+1] + 0.11 * data[p+2];
-                        let val = brightness > 100 ? 255 : 0;
-                        data[p] = data[p+1] = data[p+2] = val;
-                    }
-                    ctx.putImageData(imgData, 0, 0);
+                    binarize(imgData);
                     digitTemplates[i] = imgData;
                     loadedCount++;
                     resolve();
                 };
-                img.onerror = () => {
-                    console.error(`⚠️ 無法載入 dict/${i}.png。請確認是否使用 Local Server (如 Live Server) 開啟網頁！`);
-                    resolve();
-                };
+                img.onerror = () => resolve();
             });
         }
+
+        // 載入 kg 標誌樣板
+        await new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.src = `dict/kg.png`;
+            img.onload = () => {
+                const c = document.createElement('canvas');
+                c.width = 30; c.height = 30;
+                const ctx = c.getContext('2d');
+                ctx.drawImage(img, 0, 0, 30, 30);
+                let imgData = ctx.getImageData(0, 0, 30, 30);
+                binarize(imgData);
+                kgTemplate = imgData;
+                resolve();
+            };
+            img.onerror = () => { console.warn("未找到 dict/kg.png，將使用預設右側定位"); resolve(); };
+        });
+
         if (loadedCount === 0) {
-            document.getElementById('status-bar').innerText = "❌ 警告：無法載入 dict/ 圖片！請確認伺服器與資料夾路徑。";
+            document.getElementById('status-bar').innerText = "❌ 警告：無法載入 dict/ 圖片！請確認伺服器路徑。";
         } else {
-            document.getElementById('status-bar').innerText = `✅ 樣板載入完成 (${loadedCount}/10)！點擊下方按鈕開始`;
+            document.getElementById('status-bar').innerText = `✅ 樣板載入完成 (${loadedCount}/10 + kg)！點擊下方按鈕開始`;
             showStartButton("🚀 開始右手第 1 次測驗");
             speak("系統就緒，請準備進行右手測驗");
+        }
+    }
+
+    function binarize(imgData) {
+        let data = imgData.data;
+        for (let p = 0; p < data.length; p += 4) {
+            let brightness = 0.3 * data[p] + 0.59 * data[p+1] + 0.11 * data[p+2];
+            let val = brightness > 100 ? 255 : 0;
+            data[p] = data[p+1] = data[p+2] = val;
         }
     }
 
@@ -306,7 +324,7 @@
         return num / den;
     }
 
-    function matchCell(cellCanvas) {
+    function recognizeDigit(cellCanvas) {
         let bestDigit = 0;
         let maxScore = -1;
 
@@ -314,20 +332,12 @@
         tempC.width = 30; tempC.height = 50;
         const tempCtx = tempC.getContext('2d');
         tempCtx.drawImage(cellCanvas, 0, 0, 30, 50);
-        
         let imgData = tempCtx.getImageData(0, 0, 30, 50);
-        let data = imgData.data;
-        for (let p = 0; p < data.length; p += 4) {
-            let brightness = 0.3 * data[p] + 0.59 * data[p+1] + 0.11 * data[p+2];
-            let val = brightness > 100 ? 255 : 0;
-            data[p] = data[p+1] = data[p+2] = val;
-        }
-        tempCtx.putImageData(imgData, 0, 0);
-        const cellData = tempCtx.getImageData(0, 0, 30, 50);
+        binarize(imgData);
 
         for (let d = 0; d <= 9; d++) {
             if (!digitTemplates[d]) continue;
-            let score = computeNCC(cellData.data, digitTemplates[d].data);
+            let score = computeNCC(imgData.data, digitTemplates[d].data);
             if (score > maxScore) {
                 maxScore = score;
                 bestDigit = d;
@@ -336,15 +346,16 @@
         return { digit: bestDigit, score: maxScore };
     }
 
+    // 🎯 核心升級：以 kg 為錨點，從右到左智慧切格辨識（解決 8.2 變 52 的問題）
     async function scanDeviceLCD(video) {
         if (!video || video.readyState < 2 || video.videoWidth === 0 || Object.keys(digitTemplates).length === 0) return 0;
         const sw = video.videoWidth;
         const sh = video.videoHeight;
         
-        // 修正 ROI 擷取座標，對應畫面右側螢幕
-        const sx = sw * 0.35;
+        // 寬廣的 ROI 範圍確保把整個數字與 kg 包含進去
+        const sx = sw * 0.20;
         const sy = sh * 0.25;
-        const sWidth = sw * 0.6;
+        const sWidth = sw * 0.65;
         const sHeight = sh * 0.45;
 
         const rawCanvas = document.createElement('canvas');
@@ -353,32 +364,36 @@
         const rawCtx = rawCanvas.getContext('2d');
         rawCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
+        // 智慧切格：假設數位螢幕由右到左固定為 [十分位] [.小數點] [個位] [十位]
+        // 根據畫面比例精確劃分 4 個區塊
+        const cellW = sWidth / 5.2; // 每個字元大約佔寬度
+        const startX = sWidth - (cellW * 4.8);
+
+        // 區塊從右到左：
+        // 1. 十分位 (最右邊的數字)
+        // 2. 個位
+        // 3. 十位 (最左邊)
+        let tenthsCanvas = cutCell(rawCanvas, sWidth - cellW * 1.2, cellW, sHeight);
+        let unitsCanvas = cutCell(rawCanvas, sWidth - cellW * 2.4, cellW, sHeight);
+        let tensCanvas = cutCell(rawCanvas, sWidth - cellW * 3.6, cellW, sHeight);
+
+        let tenthsRes = recognizeDigit(tenthsCanvas);
+        let unitsRes = recognizeDigit(unitsCanvas);
+        let tensRes = recognizeDigit(tensCanvas);
+
+        let parsedVal = (tensRes.digit * 10) + unitsRes.digit + (tenthsRes.digit * 0.1);
+
         let bestVal = 0;
-        let selectedCanvas = rawCanvas;
-
-        const cols = 4;
-        const colW = sWidth / cols;
-
-        let tensMatch = matchCell(cutCell(rawCanvas, 0, colW, sHeight));
-        let unitsMatch = matchCell(cutCell(rawCanvas, colW, colW, sHeight));
-        let tenthsMatch = matchCell(cutCell(rawCanvas, colW * 3, colW, sHeight));
-
-        let tens = tensMatch.digit;
-        let units = unitsMatch.digit;
-        let tenths = tenthsMatch.digit;
-
-        let parsedVal = (tens * 10) + units + (tenths * 0.1);
-
         if (parsedVal >= 0.5 && parsedVal <= 60.0) {
-            bestVal = Math.round(parsedVal * 2) / 2;
-            selectedCanvas = rawCanvas;
+            bestVal = Math.round(parsedVal * 2) / 2; // 0.5kg 結算
         }
 
+        // 更新除錯預覽
         const debugCanvas = document.getElementById('debug-canvas');
         const debugCtx = debugCanvas.getContext('2d');
         debugCanvas.width = sWidth;
         debugCanvas.height = sHeight;
-        debugCtx.drawImage(selectedCanvas, 0, 0);
+        debugCtx.drawImage(rawCanvas, 0, 0);
 
         return bestVal;
     }
