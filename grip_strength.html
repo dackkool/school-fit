@@ -2,7 +2,7 @@
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
-    <title>AI 智能握力挑戰與自動讀數</title>
+    <title>AI 智能握力挑戰與歷史紀錄</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <!-- 引入 Supabase JS SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -11,7 +11,7 @@
 
     <!-- 頂部標題與功能切換 -->
     <header class="w-full max-w-2xl flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">💪 AI 智能握力挑戰 (自動讀數版)</h1>
+        <h1 class="text-2xl font-bold">💪 AI 智能握力挑戰 (實體白框版)</h1>
         <div class="space-x-2">
             <button onclick="switchTab('game')" id="btn-game" class="px-4 py-2 bg-green-600 rounded font-bold">挑戰模式</button>
             <button onclick="switchTab('history')" id="btn-history" class="px-4 py-2 bg-gray-700 rounded">歷史往績</button>
@@ -23,17 +23,18 @@
         <div class="relative inline-block border-4 border-green-500 rounded-lg overflow-hidden shadow-lg mb-4 bg-black">
             <!-- 即時視訊串流 -->
             <video id="webcam" autoplay playsinline width="640" height="480" class="block"></video>
-            <!-- 視覺引導框 (請將實體白框對準此處) -->
+            <!-- 視覺引導框 (對準你的實體白框) -->
             <div class="absolute border-2 border-dashed border-yellow-400 pointer-events-none" 
                  style="top: 30%; left: 25%; width: 50%; height: 35%;">
-                <span class="text-xs bg-black/60 px-2 py-1 text-yellow-400 rounded">請將白色貼紙框對準此區域</span>
+                <span class="text-xs bg-black/60 px-2 py-1 text-yellow-400 rounded">請將實體白框對準此區域</span>
             </div>
         </div>
 
-        <!-- 即時讀數顯示 -->
-        <div class="text-4xl font-mono text-green-400 mb-4">
-            當前讀數: <span id="grip-result">0.0</span> kg
+        <!-- 即時讀數顯示 (點擊數字可手動修正或微調) -->
+        <div class="text-4xl font-mono text-green-400 mb-2 cursor-pointer hover:underline" title="點擊可手動修改數值">
+            當前讀數: <span id="grip-result">6.8</span> kg
         </div>
+        <p class="text-xs text-gray-400 mb-4">(提示：若需微調讀數，可直接點擊上方數字修改)</p>
 
         <!-- 操作按鈕 -->
         <div class="space-x-4">
@@ -69,11 +70,11 @@
         // ==========================================
         // 1. Supabase 設定 (請替換為你的金鑰)
         // ==========================================
-        const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_';
+        const SUPABASE_URL = '你的_SUPABASE_URL';
+        const SUPABASE_KEY = '你的_SUPABASE_ANON_KEY';
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // 分頁切換
+        // 分頁切換邏輯
         function switchTab(tab) {
             if (tab === 'game') {
                 document.getElementById('view-game').classList.remove('hidden');
@@ -85,32 +86,12 @@
                 document.getElementById('view-history').classList.remove('hidden');
                 document.getElementById('btn-history').className = 'px-4 py-2 bg-green-600 rounded font-bold';
                 document.getElementById('btn-game').className = 'px-4 py-2 bg-gray-700 rounded';
-                loadHistoryFromSupabase();
+                loadHistoryFromSupabase(); // 自動載入往績
             }
         }
 
         // ==========================================
-        // 2. 預載 0-9 數字範本字典
-        // ==========================================
-        const digitTemplates = {};
-        let templatesLoaded = false;
-
-        async function loadTemplates() {
-            let loadedCount = 0;
-            for (let i = 0; i <= 9; i++) {
-                const img = new Image();
-                img.src = `dict/${i}.png`;
-                img.onload = () => {
-                    loadedCount++;
-                    if (loadedCount === 10) templatesLoaded = true;
-                };
-                digitTemplates[i] = img;
-            }
-        }
-        loadTemplates();
-
-        // ==========================================
-        // 3. 視訊串流與自動 ROI 辨識迴圈
+        // 2. 視訊與即時 ROI 畫面擷取
         // ==========================================
         const video = document.getElementById('webcam');
         const resultSpan = document.getElementById('grip-result');
@@ -126,11 +107,20 @@
                 return new Promise((resolve) => { video.onloadedmetadata = () => resolve(video); });
             } catch (err) {
                 console.error("無法開啟攝影機:", err);
-                alert("請允許攝影機權限！");
+                alert("請允許攝影機權限以使用本程式！");
             }
         }
 
-        let currentDetectedValue = 0.0;
+        let currentDetectedValue = 6.8; // 預設初始讀數
+
+        // 點擊數字可直接手動覆寫/微調
+        resultSpan.parentElement.onclick = () => {
+            let val = prompt("請輸入或確認當前握力成績 (kg):", currentDetectedValue.toFixed(1));
+            if (val !== null && !isNaN(val)) {
+                currentDetectedValue = parseFloat(val);
+                resultSpan.innerText = currentDetectedValue.toFixed(1);
+            }
+        };
 
         function processFrame() {
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
@@ -141,44 +131,31 @@
                 canvas.height = vh;
                 ctx.drawImage(video, 0, 0, vw, vh);
 
-                // 對應畫面上黃色虛線框的 ROI 區域 (可根據你相機拍到的實體白框位置微調百分比)
+                // 對應畫面上實體白框的 ROI 區域
                 const roiX = vw * 0.25;
                 const roiY = vh * 0.30;
                 const roiW = vw * 0.50;
                 const roiH = vh * 0.35;
 
-                // 取得白框內的影像像素
+                // 擷取 ROI 畫面像素供後續分析或樣板匹配使用
                 const frameData = ctx.getImageData(roiX, roiY, roiW, roiH);
-                
-                // 簡易自動模擬讀數處理 (當範本載入後，可透過 pixel matching 計算)
-                // 這裡我們維持動態更新介面，若你想直接測試可手動微調
-                // currentDetectedValue = recognizeDigits(frameData);
-                // resultSpan.innerText = currentDetectedValue.toFixed(1);
             }
             requestAnimationFrame(processFrame);
         }
 
-        // 樣板匹配核心函數 (比對 0-9 像素差異)
-        function recognizeDigits(imgData) {
-            if (!templatesLoaded) return 0.0;
-            // 這裡會將 imgData 切割成數字字元並與 digitTemplates 比對
-            // 回傳計算後的數值 (例如 14.1)
-            return 14.1; // 範例回傳
-        }
-
         // ==========================================
-        // 4. Supabase 雲端紀錄與往績查詢
+        // 3. Supabase 雲端紀錄與往績查詢
         // ==========================================
         async function recordGripScore() {
-            const score = currentDetectedValue > 0 ? currentDetectedValue : 14.1; // 預設帶入或抓取當前讀數
-            
+            const score = currentDetectedValue;
+
             const { data, error } = await supabaseClient
                 .from('grip_records')
                 .insert([{ score: score, created_at: new Date() }]);
 
             if (error) {
                 console.error('上傳失敗:', error);
-                alert('成績上傳雲端失敗，請檢查 Supabase 連線');
+                alert('成績上傳雲端失敗，請檢查 Supabase 連線設定');
             } else {
                 alert(`🎉 成功上傳成績: ${score} kg 到雲端！`);
                 speakResult(score);
@@ -219,7 +196,7 @@
         }
 
         // ==========================================
-        // 5. 語音導引 (TTS)
+        // 4. 語音導引 (TTS 廣東話播報)
         // ==========================================
         function speakResult(score) {
             if ('speechSynthesis' in window) {
@@ -229,7 +206,7 @@
             }
         }
 
-        // 啟動
+        // 啟動相機與迴圈
         setupCamera().then(() => {
             requestAnimationFrame(processFrame);
         });
