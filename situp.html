@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>一分鐘仰臥起坐挑戰 | AI 體適能</title>
-    <!-- MediaPipe 庫 -->
+    <!-- MediaPipe Pose 與 Hands 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <!-- Supabase JS 庫 -->
@@ -55,7 +56,6 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
-            /*transform: scaleX(-1); /* 保持鏡像左右正確 */
         }
 
         /* 狀態指示燈 */
@@ -181,6 +181,7 @@
             font-size: 1rem;
             border-radius: 8px;
             border: 1.5px solid #ccc;
+            background-color: #fff;
         }
 
         #score-board {
@@ -323,7 +324,7 @@
 <div id="app-container">
     <!-- 左側：視像鏡頭區（挑戰時最大化） -->
     <div id="video-pane">
-        <div id="body-status-badge">❌ 請調整手機，全身側面入鏡</div>
+        <div id="body-status-badge">❌ 請調整鏡頭，全身入鏡</div>
         <!-- 準備倒數大字體 -->
         <div id="ready-countdown-overlay">3</div>
         <!-- 沉浸式懸浮 HUD -->
@@ -360,16 +361,16 @@
                 <input type="text" id="student-id" placeholder="例如: S001">
             </div>
 
-            <!-- 新增：鏡頭選擇下拉選單 -->
+            <!-- 鏡頭選擇下拉選單 -->
             <div class="input-group">
-                <label>選擇相機鏡頭：</label>
+                <label>選擇相機鏡頭（前置 / 後置）：</label>
                 <select id="camera-select">
                     <option value="">正在偵測可用鏡頭...</option>
                 </select>
             </div>
 
             <div class="tips-box">
-                💡 <b>要點：</b>雙腳曲膝（固定腳背）、手交叉放胸前、起坐時手肘觸及大腿。
+                💡 <b>流程：</b>1. 全身入鏡 ➔ 2. 比出「👌 OK」手勢 ➔ 3. 數三聲後開始仰臥起坐（曲膝、手放胸前、起坐觸及大腿）。
             </div>
 
             <div id="score-board">
@@ -383,10 +384,10 @@
                 </div>
             </div>
 
-            <div id="feedback">請退後讓鏡頭拍到全身並保持站立/準備姿勢，將自動開始倒數。</div>
+            <div id="feedback">請退後讓鏡頭拍到全身，再向鏡頭比出「👌 OK」手勢開始。</div>
 
             <div>
-                <button id="start-btn" class="action-btn" style="background-color: #ff9800;" disabled>請先站到鏡頭前讓全身入鏡</button>
+                <button id="start-btn" class="action-btn" style="background-color: #ff9800;" disabled>全身入鏡後比出「👌 OK」手勢開始</button>
                 <button id="stop-btn" class="action-btn" style="background-color: #f44336; display: none;">結束並上傳成績</button>
             </div>
         </div>
@@ -416,32 +417,9 @@
 
 <script>
     // --- 1. 請填入你自己的 Supabase 資料 ---
-    const SUPABASE_URL = 'https://yenaiiwhfqgksuofnrjn.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_umYVSQBbOX8yQgdxL5TlbA_X9CXZKP_'; 
+    const SUPABASE_URL = 'supa url'; 
+    const SUPABASE_ANON_KEY = 'anon key'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    // --- 2. 檢查 student_id 要跟 login 一樣 ---
-    window.addEventListener('DOMContentLoaded', () => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlStudentId = urlParams.get('user_id');
-        const localStudentId = sessionStorage.getItem('current_user_id');
-
-        if (!localStudentId || (urlStudentId && urlStudentId !== localStudentId)) {
-            alert('⚠️ 偵測到身分不符或未登入，請先重新登入！');
-            window.location.href = 'index.html';
-            return;
-        }
-
-        const activeStudentId = localStudentId;
-        const studentIdInput = document.getElementById('student-id');
-        if (studentIdInput) {
-            studentIdInput.value = activeStudentId;
-            studentIdInput.disabled = true;
-        }
-
-        // 初始化並偵測可用鏡頭
-        initCameras();
-    });
 
     const videoElement = document.getElementsByClassName('input_video')[0];
     const canvasElement = document.getElementsByClassName('output_canvas')[0];
@@ -462,18 +440,45 @@
     let situpCounter = 0;
     let stage = 'down';
     let isRunning = false;
-    let isCountdownActive = false; // 是否正在進行 3 秒倒數
-    let fullBodyTimer = null;      // 連續 3 秒計時器
+    let isCountdownActive = false;
+    let isFullBodyReady = false;
+    let okGestureHoldCount = 0;
     let timeLeft = 60;
     let countdownInterval;
     let currentStream = null;
     let cameraAnimationId = null;
+    let selectedDeviceId = null;
+    let isFrontCamera = true;
+    let latestHandLandmarks = null;
+    let lastOkPromptTime = 0;
 
-    // 自動偵測可用鏡頭並填入下拉選單
+    // --- 2. 檢查 student_id 要跟 login 一樣 ---
+    window.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlStudentId = urlParams.get('user_id');
+        const localStudentId = sessionStorage.getItem('current_user_id');
+
+        if (!localStudentId || (urlStudentId && urlStudentId !== localStudentId)) {
+            alert('⚠️ 偵測到身分不符或未登入，請先重新登入！');
+            window.location.href = 'index.html';
+            return;
+        }
+
+        const activeStudentId = localStudentId;
+        if (studentIdInput) {
+            studentIdInput.value = activeStudentId;
+            studentIdInput.disabled = true;
+        }
+
+        initCameras();
+    });
+
+    // 自動偵測可用鏡頭（含前置/後置辨識）並填入下拉選單
     async function initCameras() {
         try {
-            // 先請求一次相機權限以確保能讀取裝置名稱
-            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const tempStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user' }
+            });
             tempStream.getTracks().forEach(track => track.stop());
 
             const devices = await navigator.mediaDevices.enumerateDevices();
@@ -481,44 +486,72 @@
 
             cameraSelect.innerHTML = '';
             if (videoDevices.length === 0) {
-                cameraSelect.innerHTML = '<option value="">找不到可用鏡頭</option>';
+                cameraSelect.innerHTML = '<option value="">預設鏡頭</option>';
+                selectedDeviceId = null;
+                startSelectedCamera(null);
                 return;
             }
 
             videoDevices.forEach((device, index) => {
                 const option = document.createElement('option');
                 option.value = device.deviceId;
-                option.text = device.label || `鏡頭 ${index + 1}`;
+                const lower = (device.label || '').toLowerCase();
+                let tag = '';
+                if (lower.includes('front') || lower.includes('user') || lower.includes('前')) tag = ' (前置)';
+                else if (lower.includes('back') || lower.includes('environment') || lower.includes('後')) tag = ' (後置)';
+                option.text = (device.label || `鏡頭 ${index + 1}`) + tag;
                 cameraSelect.appendChild(option);
             });
 
-            // 預設啟動第一個鏡頭
-            startSelectedCamera(videoDevices[0].deviceId);
+            // 預設優先選取前置鏡頭（若無則選第一個）
+            const frontDev = videoDevices.find(d => {
+                const l = (d.label || '').toLowerCase();
+                return l.includes('front') || l.includes('user') || l.includes('前');
+            }) || videoDevices[0];
 
-            // 監聽下拉選單變更事件
+            selectedDeviceId = frontDev.deviceId;
+            cameraSelect.value = selectedDeviceId;
+            startSelectedCamera(selectedDeviceId);
+
             cameraSelect.addEventListener('change', (e) => {
-                startSelectedCamera(e.target.value);
+                selectedDeviceId = e.target.value || null;
+                if (document.getElementById('tab-challenge').classList.contains('active')) {
+                    startSelectedCamera(selectedDeviceId);
+                }
             });
 
         } catch (err) {
             console.error('無法取得相機列表:', err);
-            cameraSelect.innerHTML = '<option value="">無法存取相機權限</option>';
-            // Fallback 啟動預設相機
+            cameraSelect.innerHTML = '<option value="">預設鏡頭</option>';
+            selectedDeviceId = null;
             startSelectedCamera(null);
         }
     }
 
-    // 啟動指定的鏡頭裝置
-    async function startSelectedCamera(deviceId) {
-        if (currentStream) {
-            currentStream.getTracks().forEach(track => track.stop());
-        }
+    // 關閉目前相機串流與影格迴圈
+    function stopCamera() {
         if (cameraAnimationId) {
             cancelAnimationFrame(cameraAnimationId);
+            cameraAnimationId = null;
         }
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+            currentStream = null;
+        }
+        videoElement.srcObject = null;
+        latestHandLandmarks = null;
+        isFullBodyReady = false;
+        okGestureHoldCount = 0;
+    }
+
+    // 啟動指定的鏡頭裝置
+    async function startSelectedCamera(deviceId) {
+        stopCamera();
 
         const constraints = {
-            video: deviceId ? { deviceId: { exact: deviceId } } : { width: 640, height: 480 }
+            video: deviceId
+                ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
+                : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
         };
 
         try {
@@ -526,18 +559,33 @@
             videoElement.srcObject = currentStream;
             await videoElement.play();
 
-            // 啟動影格處理迴圈
+            const track = currentStream.getVideoTracks()[0];
+            const label = (track && track.label ? track.label : '').toLowerCase();
+            if (label.includes('back') || label.includes('environment') || label.includes('後')) {
+                isFrontCamera = false;
+            } else if (label.includes('front') || label.includes('user') || label.includes('前')) {
+                isFrontCamera = true;
+            } else {
+                isFrontCamera = !deviceId;
+            }
+
             async function renderFrame() {
-                if (videoElement.readyState >= 2) {
-                    await pose.send({ image: videoElement });
+                if (!currentStream || videoElement.readyState < 2) {
+                    cameraAnimationId = requestAnimationFrame(renderFrame);
+                    return;
+                }
+                await pose.send({ image: videoElement });
+                // 僅在等待「OK」手勢階段執行手部偵測，節省效能
+                if (!isRunning && !isCountdownActive && isFullBodyReady) {
+                    await hands.send({ image: videoElement });
                 }
                 cameraAnimationId = requestAnimationFrame(renderFrame);
             }
-            renderFrame();
+            cameraAnimationId = requestAnimationFrame(renderFrame);
 
         } catch (err) {
             console.error('啟動選定鏡頭失敗:', err);
-            alert('切換鏡頭失敗，請檢查相機權限或裝置是否被佔用。');
+            alert('啟動鏡頭失敗，請檢查相機權限或裝置是否被佔用。');
         }
     }
 
@@ -554,11 +602,15 @@
             const target = document.getElementById('tab-challenge');
             target.classList.add('active');
             target.style.display = 'flex';
+            // 切回挑戰區時重新開啟鏡頭
+            startSelectedCamera(selectedDeviceId);
         } else {
-            if (isRunning) {
-                alert('挑戰正在進行中，請先完成或結束挑戰！');
+            if (isRunning || isCountdownActive) {
+                alert('挑戰正在進行或倒數中，請先完成或結束挑戰！');
                 return;
             }
+            // 選擇觀看往績時，關閉鏡頭
+            stopCamera();
             appContainer.classList.add('full-ui');
             document.querySelectorAll('.tab-btn')[1].classList.add('active');
             const target = document.getElementById('tab-history');
@@ -571,6 +623,7 @@
 
     const synth = window.speechSynthesis;
     const speak = (text) => {
+        if (!synth) return;
         const utter = new SpeechSynthesisUtterance(text);
         utter.lang = 'zh-HK';
         synth.cancel();
@@ -584,61 +637,112 @@
         return angle;
     }
 
+    function dist2D(p1, p2) {
+        return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    }
+
     function checkFullBody(landmarks) {
         const keyPoints = [0, 11, 12, 23, 24, 25, 26]; 
         return keyPoints.every(idx => landmarks[idx] && landmarks[idx].visibility > 0.45);
     }
 
+    // 判斷是否為「OK」手勢：拇指尖(4)與食指尖(8)靠近，中指(12)、無名指(16)、小指(20)指尖距離手腕(0)較遠（呈伸展狀態）
+    function isOkGesture(landmarks) {
+        if (!landmarks || landmarks.length < 21) return false;
+        const wrist = landmarks[0];
+        const thumbTip = landmarks[4];
+        const indexTip = landmarks[8];
+        const middleTip = landmarks[12];
+        const ringTip = landmarks[16];
+        const pinkyTip = landmarks[20];
+        const middleMcp = landmarks[9];
+
+        const handScale = Math.max(dist2D(wrist, middleMcp), 0.05);
+        const pinchDist = dist2D(thumbTip, indexTip);
+        const isPinched = pinchDist < handScale * 0.45;
+
+        const middleExtended = dist2D(wrist, middleTip) > dist2D(wrist, landmarks[10]) * 1.15;
+        const ringExtended = dist2D(wrist, ringTip) > dist2D(wrist, landmarks[14]) * 1.15;
+        const pinkyExtended = dist2D(wrist, pinkyTip) > dist2D(wrist, landmarks[18]) * 1.15;
+
+        return isPinched && middleExtended && ringExtended && pinkyExtended;
+    }
+
+    function onHandResults(results) {
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            latestHandLandmarks = results.multiHandLandmarks[0];
+        } else {
+            latestHandLandmarks = null;
+        }
+    }
+
     function onResults(results) {
+        if (!currentStream) return;
+
         canvasElement.width = videoElement.videoWidth || 640;
         canvasElement.height = videoElement.videoHeight || 480;
 
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
         
-        canvasCtx.scale(-1, 1);
-        canvasCtx.translate(-canvasElement.width, 0);
+        if (isFrontCamera) {
+            canvasCtx.scale(-1, 1);
+            canvasCtx.translate(-canvasElement.width, 0);
+        }
         canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
         if (results.poseLandmarks) {
             drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
             drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', lineWidth: 1, radius: 4});
 
-            const isFullBodyVisible = checkFullBody(results.poseLandmarks);
+            const fullBodyVisible = checkFullBody(results.poseLandmarks);
 
-            // 如果挑戰尚未開始且不在倒數中
             if (!isRunning && !isCountdownActive) {
                 const studentId = studentIdInput.value.trim();
                 if (!studentId) {
+                    isFullBodyReady = false;
+                    okGestureHoldCount = 0;
                     bodyStatusBadge.style.backgroundColor = '#ff9800';
                     bodyStatusBadge.innerText = '⚠️ 請先輸入學號';
-                    feedbackDisplay.innerText = '請先在上方輸入學號，再退後讓全身入鏡。';
+                    feedbackDisplay.innerText = '請先確認學號，再讓全身入鏡並比出「👌 OK」手勢。';
                     canvasCtx.restore();
                     return;
                 }
 
-                if (isFullBodyVisible) {
-                    bodyStatusBadge.style.backgroundColor = '#4caf50';
-                    bodyStatusBadge.innerText = '✅ 全身已入鏡，準備開始！';
-                    feedbackDisplay.innerText = '保持姿勢，即將自動開始倒數...';
-                    
-                    // 如果還沒有啟動 3 秒計時器，則開始計時
-                    if (!fullBodyTimer) {
-                        startAutoCountdownTimer();
+                if (fullBodyVisible) {
+                    isFullBodyReady = true;
+                    bodyStatusBadge.style.backgroundColor = '#2196f3';
+                    bodyStatusBadge.innerText = '👌 全身已入鏡，請比「OK」手勢';
+
+                    const okDetected = isOkGesture(latestHandLandmarks);
+                    if (okDetected) {
+                        okGestureHoldCount++;
+                        feedbackDisplay.innerText = `👌 偵測到 OK 手勢 (${okGestureHoldCount}/4)...`;
+                        if (okGestureHoldCount >= 4) {
+                            okGestureHoldCount = 0;
+                            latestHandLandmarks = null;
+                            triggerPreCountdown();
+                        }
+                    } else {
+                        okGestureHoldCount = 0;
+                        feedbackDisplay.innerText = '✅ 已看到全身！請向鏡頭比出「👌 OK」手勢開始倒數。';
+                        const now = Date.now();
+                        if (now - lastOkPromptTime > 5000) {
+                            lastOkPromptTime = now;
+                            speak('已看到全身，請比出OK手勢開始');
+                        }
                     }
                 } else {
+                    isFullBodyReady = false;
+                    okGestureHoldCount = 0;
                     bodyStatusBadge.style.backgroundColor = '#f44336';
                     bodyStatusBadge.innerText = '❌ 請退後，全身需入鏡';
                     feedbackDisplay.innerText = '請退後讓鏡頭完整拍到你的全身。';
-                    
-                    // 如果中途走開或沒對準全身，取消計時器
-                    cancelAutoCountdownTimer();
                 }
                 canvasCtx.restore();
                 return;
             }
 
-            // 如果正在挑戰中，執行原本的仰臥起坐判定邏輯
             if (isRunning) {
                 const landmarks = results.poseLandmarks;
                 const side = landmarks[12].visibility > landmarks[11].visibility ? 'right' : 'left';
@@ -667,11 +771,11 @@
                 }
             }
         } else {
-            // 沒偵測到骨骼時的處理
             if (!isRunning && !isCountdownActive) {
+                isFullBodyReady = false;
+                okGestureHoldCount = 0;
                 bodyStatusBadge.style.backgroundColor = '#f44336';
                 bodyStatusBadge.innerText = '❌ 未偵測到人影';
-                cancelAutoCountdownTimer();
             }
         }
         canvasCtx.restore();
@@ -681,54 +785,41 @@
     pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     pose.onResults(onResults);
 
-    // 連續偵測到全身 3 秒後觸發倒數
-    function startAutoCountdownTimer() {
-        if (fullBodyTimer) return;
-        let secLeft = 3;
-        feedbackDisplay.innerText = `👍 全身已就位！ ${secLeft} 秒後開始自動倒數...`;
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5 });
+    hands.onResults(onHandResults);
 
-        fullBodyTimer = setTimeout(() => {
-            triggerPreCountdown();
-        }, 3000); // 3 秒連續偵測
-    }
-
-    function cancelAutoCountdownTimer() {
-        if (fullBodyTimer) {
-            clearTimeout(fullBodyTimer);
-            fullBodyTimer = null;
-        }
-    }
-
-    // 畫面 3 秒倒數準備開始
+    // 收到「OK」手勢後數三聲開始
     function triggerPreCountdown() {
-        cancelAutoCountdownTimer();
         isCountdownActive = true;
+        isFullBodyReady = false;
         bodyStatusBadge.style.backgroundColor = '#ff9800';
-        bodyStatusBadge.innerText = '🔥 準備開始！';
+        bodyStatusBadge.innerText = '👌 OK 確認！準備開始';
         
         let count = 3;
         readyCountdownOverlay.style.display = 'block';
         readyCountdownOverlay.innerText = count;
         speak(count.toString());
-        feedbackDisplay.innerText = `準備開始挑戰！`;
+        feedbackDisplay.innerText = `👌 OK 手勢確認！倒數 ${count} 秒開始...`;
 
         const preTimer = setInterval(() => {
             count--;
             if (count > 0) {
                 readyCountdownOverlay.innerText = count;
+                readyCountdownOverlay.innerText = count;
                 speak(count.toString());
+                feedbackDisplay.innerText = `倒數 ${count} 秒...`;
             } else if (count === 0) {
                 readyCountdownOverlay.innerText = '開始！';
                 speak('開始');
             } else {
                 clearInterval(preTimer);
                 readyCountdownOverlay.style.display = 'none';
-                startChallenge(); // 正式開始 60 秒挑戰
+                startChallenge();
             }
         }, 1000);
     }
 
-    // 正式開始挑戰
     function startChallenge() {
         const studentId = studentIdInput.value.trim();
         if (!studentId) {
@@ -742,8 +833,10 @@
         startBtn.style.display = 'none';
         stopBtn.style.display = 'block';
         studentIdInput.disabled = true;
+        cameraSelect.disabled = true;
         
         situpCounter = 0;
+        stage = 'down';
         countDisplay.innerText = '0';
         hudCount.innerText = '0';
         timeLeft = 60;
@@ -794,7 +887,7 @@
         speak(`時間到！總共做了 ${situpCounter} 下。${praise}`);
 
         try {
-            const { data, error } = await supabaseClient
+            const { error } = await supabaseClient
                 .from('fitness_records')
                 .insert([{ 
                     student_id: studentId, 
@@ -814,10 +907,11 @@
         }
 
         startBtn.style.display = 'block';
-        startBtn.innerText = '請站在鏡頭前自動開始';
+        startBtn.innerText = '全身入鏡後比出「👌 OK」手勢開始';
         startBtn.disabled = true;
         stopBtn.style.display = 'none';
-        studentIdInput.disabled = false;
+        studentIdInput.disabled = true;
+        cameraSelect.disabled = false;
     }
 
     // 繪製走勢折線圖
